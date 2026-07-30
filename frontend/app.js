@@ -1,17 +1,15 @@
 // Dynamic API Base URL resolution:
 // - Uses window.API_CONFIG.backendUrl if specified.
-// - If served directly from backend (same origin / port 8000), uses relative path "".
-// - Otherwise (e.g. static server on port 8080 or file:// protocol), defaults to http://127.0.0.1:8000.
+// - If running on separate local dev frontend port 8080 or file:// protocol, targets http://127.0.0.1:8000.
+// - For all single-server deployments (Render, DuckDNS, custom domain, port 8000, etc.), uses relative path "".
 const API_BASE = (function() {
     if (window.API_CONFIG && window.API_CONFIG.backendUrl) {
         return window.API_CONFIG.backendUrl;
     }
-    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
-        if (window.location.port === "8000" || window.location.hostname === "127.0.0.1" && window.location.port === "8000") {
-            return "";
-        }
+    if (window.location.port === "8080" || window.location.protocol === "file:") {
+        return "http://127.0.0.1:8000";
     }
-    return "http://127.0.0.1:8000";
+    return "";
 })();
 
 let trainPairs = [];
