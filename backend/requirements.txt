@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-multipart
+pdfplumber
+pymupdf
+python-docx
+requests
+easyocr
+beautifulsoup4
+cloudscraper
+curl_cffi
