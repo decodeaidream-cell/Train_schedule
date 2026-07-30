@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- IRCTC Official Style Circular Badge -->
+  <circle cx="256" cy="256" r="240" fill="#0B2B5B"/>
+  <circle cx="256" cy="256" r="204" fill="none" stroke="#F5A623" stroke-width="18"/>
+  <circle cx="256" cy="256" r="176" fill="#FFFFFF"/>
+  <!-- Train & Tracks Emblem -->
+  <path fill="#0B2B5B" d="M170 150h172c15 0 27 12 27 27v145c0 30-24 54-54 54H197c-30 0-54-24-54-54V177c0-15 12-27 27-27zm27 50v55h118v-55H197zm-14 135a20 20 0 1 0 0-40 20 20 0 1 0 0 40zm146 0a20 20 0 1 0 0-40 20 20 0 1 0 0 40z"/>
+  <circle cx="183" cy="335" r="16" fill="#F5A623"/>
+  <circle cx="329" cy="335" r="16" fill="#F5A623"/>
+  <path fill="#F5A623" d="M140 400h232v20H140z"/>
+  <path stroke="#0B2B5B" stroke-width="14" stroke-linecap="round" d="M170 420l-30 35m202-35l30 35"/>
+</svg>
