@@ -379,12 +379,11 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                 if len(tds) == 7:
                     bits = []
                     for td in tds:
-                        style = td.get("style", "")
-                        cls = " ".join(td.get("class", []))
-                        if "bold" in style or "greenColor" in cls or "redColor" in cls:
-                            bits.append("1")
-                        else:
+                        style = str(td.get("style", ""))
+                        if "opacity" in style and ("0.2" in style or "0.3" in style or "0.4" in style):
                             bits.append("0")
+                        else:
+                            bits.append("1")
                     mon_sun_bits = bits[1:] + bits[:1]
                     run_days_str = _format_run_days("".join(mon_sun_bits))
 
