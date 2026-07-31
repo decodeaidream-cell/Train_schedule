@@ -247,16 +247,37 @@ def _get_iri_timetable_url(train_no: str) -> Optional[str]:
 
 def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
     """
-    Scrape train schedule directly from IndiaRailInfo.
+    Scrape train schedule directly from IndiaRailInfo with robust HTML parsing.
     """
     train_no = str(train_no).strip()
     print(f"  {C.B_CYAN}🔍 [IRI]{C.RESET} Fetching Schedule for Train {C.B_YELLOW}{train_no}{C.RESET}...")
-    
-    iri_url = _get_iri_timetable_url(train_no)
-    if not iri_url:
-        print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Could not resolve IndiaRailInfo URL for train {C.B_YELLOW}{train_no}{C.RESET}")
-        return None
 
+    # 1. Resolve train ID slug
+    train_id = None
+    try:
+        session_search = curl_requests.Session(impersonate="chrome120")
+        session_search.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://m.indiarailinfo.com/"
+        })
+        session_search.get("https://m.indiarailinfo.com/", timeout=5)
+        session_search.get("https://m.indiarailinfo.com/verify-browser?t=0:5:2:1:8:1:1:0:0:nosig:0", timeout=5)
+        r_s = session_search.get(f"https://m.indiarailinfo.com/trains?q={train_no}", timeout=6)
+        soup_s = BeautifulSoup(r_s.text, "html.parser")
+        for a in soup_s.find_all("a"):
+            href = a.get("href", "")
+            if "/train/" in href and not "/pdf/" in href:
+                m = re.search(r"/train/(?:[^/]+/)?(\d+)", href)
+                if m:
+                    train_id = m.group(1)
+                    break
+    except Exception as e:
+        print(f"  [WARN] Slug resolution fallback for {train_no}: {e}")
+
+    if not train_id:
+        train_id = train_no
+
+    iri_url = f"https://indiarailinfo.com/train/{train_id}"
     print(f"  {C.CYAN}🔗 [IRI Source URL]{C.RESET} {C.DIM}-> {iri_url}{C.RESET}")
 
     try:
@@ -272,8 +293,6 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
             pass
 
         r = session.get(iri_url, timeout=10)
-
-        # Auto-retry once after 1s if response is temporarily throttled/empty
         if r.status_code != 200 or len(r.text) < 5000:
             time.sleep(1)
             r = session.get(iri_url, timeout=10)
@@ -285,27 +304,26 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         soup = BeautifulSoup(r.text, "html.parser")
         title = soup.title.string if soup.title else f"TRAIN {train_no}"
 
-        # Train Name extraction from title
+        # Train Name
         train_name = f"TRAIN {train_no}"
         m_name = re.search(r"^\d+/([^-(]+)", title)
         if m_name:
             train_name = m_name.group(1).strip()
-        else:
-            m_alt = re.search(r"^(.*?)-", title)
-            if m_alt:
-                train_name = m_alt.group(1).strip()
 
-        # Station Codes extraction in route order
+        # Station Codes in exact order
         station_codes = []
-        stn_links = soup.find_all("a", href=re.compile(r"/station/"))
-        for a in stn_links:
+        for a in soup.find_all("a", href=re.compile(r"/station/map/.*#st")):
             txt = a.get_text().strip()
-            if "/" in txt:
-                code = txt.split("/")[0].strip()
-                if 2 <= len(code) <= 5 and code.isupper() and code not in station_codes:
-                    station_codes.append(code)
-            elif 2 <= len(txt) <= 5 and txt.isupper() and txt not in station_codes and txt not in ("POST", "FAQ", "HELP", "NEWS", "MAIN", "BLOG", "HOME", "PICS", "MAP"):
+            if 2 <= len(txt) <= 5 and txt.isupper() and txt not in station_codes:
                 station_codes.append(txt)
+
+        if len(station_codes) < 2:
+            for a in soup.find_all("a", href=re.compile(r"/station/")):
+                txt = a.get_text().strip()
+                if "/" in txt:
+                    code = txt.split("/")[0].strip()
+                    if 2 <= len(code) <= 5 and code.isupper() and code not in station_codes:
+                        station_codes.append(code)
 
         if len(station_codes) < 2:
             print(f"  [WARN] Insufficient station codes found for train {train_no}")
@@ -314,36 +332,47 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         origin_code = station_codes[0]
         dest_code = station_codes[-1]
 
-        # Times extraction
+        # Departure & Arrival Times
+        dep_m = re.search(r"Departs\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", r.text, re.IGNORECASE | re.DOTALL)
+        arr_m = re.search(r"Arrives\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", r.text, re.IGNORECASE | re.DOTALL)
+
         dep_time = "---"
+        if dep_m:
+            parts = dep_m.group(1).split(":")
+            dep_time = f"{int(parts[0]):02d}{int(parts[1]):02d} hrs"
+
         arr_time = "---"
-        time_matches = re.findall(r"\b([0-2]\d:[0-5]\d)\b", r.text)
-        if time_matches:
-            def norm_t(t_str):
-                p = t_str.split(":")
-                return f"{int(p[0]):02d}{int(p[1]):02d} hrs"
-            dep_time = norm_t(time_matches[0])
-            arr_time = norm_t(time_matches[-1])
+        if arr_m:
+            parts = arr_m.group(1).split(":")
+            arr_time = f"{int(parts[0]):02d}{int(parts[1]):02d} hrs"
 
-        # Days bitmask
-        days_bit = []
-        for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
-            if day in r.text:
-                days_bit.append("1")
-            else:
-                days_bit.append("0")
-        
+        # Running Days Bitmask
         run_days_str = "(DAILY)"
-        if "".join(days_bit) != "0000000":
-            run_days_str = _format_run_days("".join(days_bit))
+        dep_tag = soup.find(string=re.compile(r"Departs\s*@", re.IGNORECASE))
+        if dep_tag and dep_tag.parent:
+            dep_cell = dep_tag.parent
+            grid = dep_cell.find("table", class_=re.compile(r"deparrgrid"))
+            if grid:
+                tds = grid.find_all("td")
+                if len(tds) == 7:
+                    bits = []
+                    for td in tds:
+                        style = td.get("style", "")
+                        cls = " ".join(td.get("class", []))
+                        if "bold" in style or "greenColor" in cls or "redColor" in cls:
+                            bits.append("1")
+                        else:
+                            bits.append("0")
+                    mon_sun_bits = bits[1:] + bits[:1]
+                    run_days_str = _format_run_days("".join(mon_sun_bits))
 
-        # Coaches extraction
+        # Coaches
         coaches_str = "20 Coaches"
         coach_match = re.search(r"(\d+)\s*(?:LHB|ICF)?\s*Coaches", r.text, re.IGNORECASE)
         if coach_match:
             coaches_str = f"{coach_match.group(1)} Coaches"
 
-        print(f"  {C.B_GREEN}✅ [OK]{C.RESET} Successfully fetched Train {C.B_YELLOW}{train_no}{C.RESET} ({C.B_WHITE}{train_name}{C.RESET}) from IndiaRailInfo")
+        print(f"  {C.B_GREEN}✅ [OK]{C.RESET} Successfully fetched Train {C.B_YELLOW}{train_no}{C.RESET} ({C.B_WHITE}{train_name}{C.RESET}) [{dep_time} - {arr_time}]")
         return {
             "train_number":  train_no,
             "train_name":    train_name,
