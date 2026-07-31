@@ -245,6 +245,20 @@ def _get_iri_timetable_url(train_no: str) -> Optional[str]:
 
     return None
 
+_CLUTTER_PARENS_RE = re.compile(
+    r"\s*\((?:PT\d*|SF|Mail|Express|Special|UnReserved|Weekly|Bi-Weekly|Tri-Weekly|Daily|AC|TOD|TOD\+WCB|WCB)\)",
+    re.IGNORECASE
+)
+
+
+def _clean_train_name(name: str) -> str:
+    if not name:
+        return ""
+    name = _CLUTTER_PARENS_RE.sub("", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name
+
+
 def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
     """
     Scrape train schedule directly from IndiaRailInfo with robust HTML parsing.
@@ -309,6 +323,7 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         m_name = re.search(r"^\d+/([^-(]+)", title)
         if m_name:
             train_name = m_name.group(1).strip()
+        train_name = _clean_train_name(train_name)
 
         # Station Codes in exact order
         station_codes = []
@@ -546,7 +561,7 @@ def build_pair_table(doc: Document, up: dict, dn: dict, schedule_type: str = "no
     up_no = up["train_number"]
     dn_no = dn["train_number"]
 
-    raw_name = up.get("train_name", "").strip()
+    raw_name = _clean_train_name(up.get("train_name", ""))
     name_str = f", {raw_name}" if raw_name else ""
 
     up_orig = up.get('origin_code', '---')
