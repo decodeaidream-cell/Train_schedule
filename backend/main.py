@@ -332,6 +332,13 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         origin_code = station_codes[0]
         dest_code = station_codes[-1]
 
+        # Safeguard against identical origin and destination codes (e.g. MAS-MAS)
+        if origin_code == dest_code and len(station_codes) > 1:
+            for c in reversed(station_codes):
+                if c != origin_code:
+                    dest_code = c
+                    break
+
         # Departure & Arrival Times
         dep_m = re.search(r"Departs\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", r.text, re.IGNORECASE | re.DOTALL)
         arr_m = re.search(r"Arrives\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", r.text, re.IGNORECASE | re.DOTALL)
@@ -542,9 +549,19 @@ def build_pair_table(doc: Document, up: dict, dn: dict, schedule_type: str = "no
     raw_name = up.get("train_name", "").strip()
     name_str = f", {raw_name}" if raw_name else ""
 
+    up_orig = up.get('origin_code', '---')
+    dn_orig = dn.get('origin_code', '---')
+
+    # Safeguard against identical station codes (e.g. MAS-MAS)
+    if up_orig == dn_orig:
+        if up.get('dest_code') and up['dest_code'] != up_orig:
+            dn_orig = up['dest_code']
+        elif dn.get('dest_code') and dn['dest_code'] != up_orig:
+            dn_orig = dn['dest_code']
+
     train_pair_label = (
         f"{up_no}-{dn_no[-2:]}, "
-        f"{up['origin_code']}-{dn['origin_code']}{name_str}"
+        f"{up_orig}-{dn_orig}{name_str}"
     )
 
     up_days = up['run_days']
