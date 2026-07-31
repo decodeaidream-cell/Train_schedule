@@ -40,6 +40,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import pdfplumber
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
