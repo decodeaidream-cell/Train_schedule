@@ -4,6 +4,12 @@
 
 ---
 
+## 🌐 Live Website Access
+* **Live Domain**: [https://irctc-schedule.duckdns.org](https://irctc-schedule.duckdns.org)
+* **Security Password**: `Suhail_Apprentice`
+
+---
+
 ## 🧐 Ye Software Kaho Toh Hai Kya?
 
 Pehle kya hota tha? Tender ka schedule banane me ghanto lagte the — IRCTC ki website kholo, cookie-token copy karo, captcha bharo, ek-ek train search karo aur MS Word me haath se table banao. 
@@ -20,13 +26,15 @@ Ab ye sab jhanjhat **KHATAM**! Ye software bina kisi login, cookie ya captcha ke
 
 ---
 
-### 2️⃣ Doosra Kadam: Tender Schedule Ka Type Chunna
+### 2️⃣ Doosra Kadam: Tender Schedule Ka Type Chunna & Validation
 Har tender ka format alag hota hai, isliye aap 5 alag-alag types me se chun sakte ho:
 1. **Normal (ETE Schedule)**: Standard 5-row wala schedule table.
-2. **Sections Schedule**: Jisme dynamic section exclude karne wala input box milta hai.
+2. **Sections Schedule**: Jisme dynamic section exclude karne wala input box milta hai. *(Mandatory: Excluded Sections fill karna zaroori hai!)*
 3. **WCB Schedule**: Jisme niche `Coaches` (e.g. `20 Coaches`) ki extra row jud jati hai.
-4. **TOD Schedule**: Jisme `UPTO <Date>` daalne ke alag boxes aate hain aur frequency line me `UPTO` jud jata hai.
+4. **TOD Schedule**: Jisme `UPTO <Date/Station>` daalne ke alag boxes aate hain. *(Mandatory: UPTO details fill karna zaroori hai!)*
 5. **TOD+WCB Schedule**: TOD aur WCB dono ka zabardast combo!
+
+> **🛡️ Strict Input Validation Guard**: TOD ya Sections select karne par agar aapne unke required textboxes (`UPTO Date` ya `Excluded Sections`) nahi bhare, toh system warning alert dega aur khali box par focus kar dega. Galat ya adhoora pair add nahi hone dega!
 
 ---
 
@@ -51,7 +59,9 @@ Backend engine python-docx ke zariye MS Word document taiyar karta hai:
 - **Font & Size**: Poora document *Times New Roman* font me banega (Body cell: 13pt, Headers: 14pt Bold).
 - **Full-Width & Centered**: Table 100% page width (`17.0cm`) par faila hoga aur **page ke bilkul CENTER me** align hoga (`WD_TABLE_ALIGNMENT.CENTER`). Right side me koi khali safed jagah nahi bachegi.
 - **Bold Prefixes & Format**: Running Between me **`Ex- `**, **`Dep:- `**, **`Arr:- `** ekdam bold rangeen punctuation ke saath aayenge.
-- **Train Pair Label**: `12604-05, CHZ-MS, Charlapalli` format me station codes aur Train Name ke beech perfect comma (`, `) aayega.
+- **Exact Timings & Route**: Departure aur Arrival timings (`2010 hrs`, `1206 hrs`) aur origin/destination station codes 100% verified.
+- **Accurate Running Days**: Daily, 1-day weekly (`01 DAY FRI`), 2-day weekly (`02 DAYS MON, FRI`), aur 6-day Shatabdi/Vande Bharat (`06 DAYS Ex-WED`) sabka exact frequency bitmask format me print hoga.
+- **Train Pair Label**: `12604-05, CHZ-MS, Charlapalli` format me station codes aur Clean Train Name ke beech perfect comma (`, `) aayega.
 - **"Husband-Wife" Jodi Service Table**: Document ke bilkul last me har train pair ki ek 2x8 Kitchen Service table (`Day`, `Service`, `Station`, `Time`... `Nil`) **<u>Train no.12601-02</u>** heading ke saath jud jayegi!
 
 ---
@@ -59,8 +69,8 @@ Backend engine python-docx ke zariye MS Word document taiyar karta hai:
 ### 5️⃣ Panchva Kadam: Instant Automatic File Download!
 Jaise hi last table ban ke taiyar hoga:
 - Server bolta hai `🎉 DOCUMENT GENERATION COMPLETED SUCCESSFULLY!`
-- Browser aapke computer me **`IRCTC_Live_Schedules.docx`** file automatic download kar deta hai.
-- Sath hi kitne minutes ki mehanat bachi, uska **Stats Dashboard** bhi update ho jata hai!
+- Browser aapke computer me **`IRCTC_Tender_Schedules.docx`** file automatic download kar deta hai.
+- Sath hi kitne minutes ki mehanat bachi, uska **Stats Dashboard** (`stats.json`) bhi real-time update ho jata hai!
 
 ---
 
@@ -69,8 +79,9 @@ Jaise hi last table ban ke taiyar hoga:
 | Purza (Component) | File Location | Kya Kaam Karta Hai? |
 | :--- | :--- | :--- |
 | **Backend Engine** | `backend/main.py` | FastAPI server, IndiaRailInfo Scraper, python-docx Generator, SSE Real-time Streamer & Server Security Guard |
+| **Legacy IRCTC Engine** | `backend/legacy_irctc.py` | Standalone legacy IRCTC official JSON API module (Local testing ke liye) |
 | **Frontend UI** | `frontend/index.html` | Modern Dark/Light Blue theme UI, Inputs, Password Modal, Live Terminal Stream Viewport |
-| **Frontend Logic** | `frontend/app.js` | Dynamic Input Toggle, Password Submission, ReadableStream SSE Log Consumer & Auto-Download |
+| **Frontend Logic** | `frontend/app.js` | Dynamic Input Toggle, Validation Guard, Password Submission, ReadableStream SSE Log Consumer & Auto-Download |
 | **Stats Engine** | `backend/stats.json` | Atomic thread-safe file me generated files aur saved time ka record rakhta hai |
 
 ---
