@@ -199,6 +199,24 @@ addPairBtn.addEventListener("click", () => {
     const upSections = (type === "sections" && document.getElementById("upSectionsInput")) ? document.getElementById("upSectionsInput").value.trim() : "";
     const dnSections = (type === "sections" && document.getElementById("dnSectionsInput")) ? document.getElementById("dnSectionsInput").value.trim() : "";
 
+    if (isTod) {
+        if (!upUpto || !dnUpto) {
+            alert("⚠️ Please enter UPTO details (e.g., date or station) for both UP and DOWN trains in TOD schedule!");
+            if (!upUpto && document.getElementById("upUptoDate")) document.getElementById("upUptoDate").focus();
+            else if (!dnUpto && document.getElementById("dnUptoDate")) document.getElementById("dnUptoDate").focus();
+            return;
+        }
+    }
+
+    if (type === "sections") {
+        if (!upSections || !dnSections) {
+            alert("⚠️ Please enter Catering Exclusion Sections for both UP and DOWN trains!");
+            if (!upSections && document.getElementById("upSectionsInput")) document.getElementById("upSectionsInput").focus();
+            else if (!dnSections && document.getElementById("dnSectionsInput")) document.getElementById("dnSectionsInput").focus();
+            return;
+        }
+    }
+
     const newPair = {
         up: up,
         down: down,
