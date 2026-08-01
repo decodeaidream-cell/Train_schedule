@@ -67,10 +67,6 @@ def _get_ocr_reader():
 # SECTION 1 - CONFIG & APP SETUP
 # ==============================================================================
 
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-SCRAPE_DELAY = 2.0    # seconds between train requests
-
-_SUFFIX_RE = re.compile(r"\s*\([A-Z]{2,4}\)\s*$", re.IGNORECASE)
 _DAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
 app = FastAPI(title="IRCTC Schedule Generator - Suhail Edition v2.1")
@@ -85,64 +81,7 @@ app.add_middleware(
 
 
 # ==============================================================================
-# PEHLE DATA YAHN SE AATA THA (LEGACY CODE - IRCTC OFFICIAL API)
-# ==============================================================================
-# [PURANA TARIQA]: Pehle train data official IRCTC JSON API se aata tha.
-# Isme terminal me har baar IRCTC Cookie aur GREQ Token manually daalna padta tha.
-# Aapke kehne par is purane code ko niche comment kar diya gaya hai reference ke liye:
-#
-# print("\n==================================================")
-# print("IRCTC AUTHENTICATION SETUP")
-# print("==================================================")
-# IRCTC_COOKIE = input("[AUTH] Paste IRCTC Cookie: ").strip()
-# IRCTC_GREQ = input("[AUTH] Paste IRCTC greq token: ").strip()
-# print("==================================================\n")
-#
-# IRCTC_HEADERS = {
-#     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-#     "cookie": IRCTC_COOKIE,
-#     "greq": IRCTC_GREQ,
-#     "bmirak": "webbm"
-# }
-#
-# def fetch_train_irctc(train_no: str, headers: dict) -> Optional[dict]:
-#     """Fetch train schedule from IRCTC Official JSON API."""
-#     url = f"https://www.irctc.co.in/eticketing/protected/mapps1/trnscheduleenquiry/{train_no}"
-#     try:
-#         response = requests.get(url, headers=headers, verify=False, timeout=15)
-#         data = response.json()
-#         days_bitmask = "".join([
-#             "1" if data.get("trainRunsOnMon") == "Y" else "0",
-#             "1" if data.get("trainRunsOnTue") == "Y" else "0",
-#             "1" if data.get("trainRunsOnWed") == "Y" else "0",
-#             "1" if data.get("trainRunsOnThu") == "Y" else "0",
-#             "1" if data.get("trainRunsOnFri") == "Y" else "0",
-#             "1" if data.get("trainRunsOnSat") == "Y" else "0",
-#             "1" if data.get("trainRunsOnSun") == "Y" else "0",
-#         ])
-#         stations = data.get("stationList", [])
-#         if len(stations) < 2: return None
-#         origin, dest = stations[0], stations[-1]
-#         return {
-#             "train_number": str(data.get("trainNumber", train_no)),
-#             "train_name": str(data.get("trainName", f"TRAIN {train_no}")),
-#             "origin_code": str(data.get("stationFrom", origin.get("stationCode"))),
-#             "dest_code": str(data.get("stationTo", dest.get("stationCode"))),
-#             "dep_time": _normalise_time(origin.get("departureTime", "")),
-#             "arr_time": _normalise_time(dest.get("arrivalTime", "")),
-#             "run_days": _format_run_days(days_bitmask),
-#             "station_codes": [stn.get("stationCode", "") for stn in stations],
-#         }
-#     except Exception as e:
-#         return None
-# ==============================================================================
-
-
-# ==============================================================================
-# AB DATA YAHN SE AA RAHA HAI (ACTIVE CODE - INDIARAILINFO SCRAPER)
-# ==============================================================================
-# [NAYA TARIQA]: Ab live train schedule data direct https://indiarailinfo.com/ se
-# automatically web scrape hokar aata hai. Isme KOI Cookie ya Token ki zaroorat nahi hai.
+# SECTION 2 - INDIARAILINFO LIVE SCRAPER ENGINE
 # ==============================================================================
 
 import urllib.parse
@@ -176,76 +115,6 @@ print(f"  {C.B_YELLOW}{C.BOLD}🚂 IRCTC TENDER SCHEDULE GENERATOR ENGINE  v3.0{
 print(f"  {C.B_CYAN}⚡ IndiaRailInfo Scraper Initialised | No Cookies/Tokens Required{C.RESET}")
 print(f"  {C.B_MAGENTA}🎨 Vibrant ANSI Console Output Active{C.RESET}")
 print(f"{C.B_CYAN}{C.BOLD}=" * 65 + f"{C.RESET}\n")
-
-_iri_session = curl_requests.Session(impersonate="chrome120")
-_iri_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Referer": "https://indiarailinfo.com/"
-})
-
-_session_verified = False
-
-def _init_iri_session():
-    global _session_verified
-    if not _session_verified:
-        try:
-            _iri_session.get("https://indiarailinfo.com/", timeout=10)
-            _iri_session.get("https://indiarailinfo.com/verify-browser?t=0:5:2:1:8:1:1:0:0:nosig:0", timeout=10)
-            _session_verified = True
-        except Exception as e:
-            print(f"[IRI] Session init warning: {e}")
-
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-]
-
-def _get_iri_timetable_url(train_no: str) -> Optional[str]:
-    train_no = str(train_no).strip()
-    # Strategy 1: Mobile Session Search
-    try:
-        session = curl_requests.Session(impersonate="chrome120")
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Referer": "https://m.indiarailinfo.com/"
-        })
-        session.get("https://m.indiarailinfo.com/", timeout=6)
-        session.get("https://m.indiarailinfo.com/verify-browser?t=0:5:2:1:8:1:1:0:0:nosig:0", timeout=6)
-        
-        r = session.get(f"https://m.indiarailinfo.com/trains?q={train_no}", timeout=6)
-        soup = BeautifulSoup(r.text, "html.parser")
-        for a in soup.find_all("a"):
-            href = a.get("href", "")
-            if "/train/" in href and not "/pdf/" in href:
-                m = re.search(r"/train/(\d+)", href)
-                if m:
-                    return f"https://indiarailinfo.com/train/{m.group(1)}"
-    except Exception as e:
-        print(f"[IRI] Mobile resolution error for {train_no}: {e}")
-
-    # Strategy 2: Search Engine Fallback
-    try:
-        import random
-        headers = {"User-Agent": random.choice(_USER_AGENTS)}
-        url_yahoo = f"https://search.yahoo.com/search?p=site:indiarailinfo.com+train+{train_no}"
-        r = std_requests.get(url_yahoo, headers=headers, timeout=6)
-        soup = BeautifulSoup(r.text, "html.parser")
-        for a in soup.find_all("a"):
-            href = a.get("href", "")
-            if "RU=" in href:
-                unquoted = urllib.parse.unquote(href)
-                if "indiarailinfo.com/train/" in unquoted or "indiarailinfo.com/trains/" in unquoted:
-                    idx = unquoted.find("https://indiarailinfo.com")
-                    if idx != -1:
-                        end_idx = unquoted.find("/RK=", idx)
-                        return unquoted[idx:end_idx] if end_idx != -1 else unquoted[idx:]
-    except Exception:
-        pass
-
-    return None
 
 _CLUTTER_PARENS_RE = re.compile(
     r"\s*\((?:PT\d*|SF|Mail|Express|Special|UnReserved|Weekly|Bi-Weekly|Tri-Weekly|Daily|AC|TOD|TOD\+WCB|WCB)\)",
