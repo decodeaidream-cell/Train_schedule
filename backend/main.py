@@ -297,6 +297,7 @@ def _solve_iri_challenge_and_fetch(url: str, session: curl_requests.Session) -> 
                 verify_url = f"https://d.indiarailinfo.com/verify-browser?t=0:5:2:1:8:1:1:0:{x_val}:{xsig}:0"
 
                 r_v = session.get(verify_url, timeout=8)
+                time.sleep(0.5)
 
                 if r_v.status_code == 200:
 
