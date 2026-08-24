@@ -5,7 +5,7 @@
 ---
 
 ## 🌐 Live Website Access
-* **Live Domain**: [https://irctc-schedule.duckdns.org](https://irctc-schedule.duckdns.org)
+* **Live Domain**: [https://train-schedule.onrender.com (Render Dashboard Live Link)](https://train-schedule.onrender.com (Render Dashboard Live Link))
 * **Security Password**: `Suhail_Apprentice`
 
 ---

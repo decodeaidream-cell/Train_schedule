@@ -6,7 +6,7 @@ An automated web application and document generation engine for creating IRCTC T
 
 ## 🌐 Live Web Application
 
-- **Live URL**: [https://irctc-schedule.duckdns.org](https://irctc-schedule.duckdns.org)
+- **Live URL**: [https://train-schedule.onrender.com (or your Render Web Service URL)](https://train-schedule.onrender.com (or your Render Web Service URL))
 - **Deployment Platform**: Render Single-Server (FastAPI + Static Frontend)
 - **Security Access Key**: `Suhail_Apprentice`
 
