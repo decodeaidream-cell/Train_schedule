@@ -254,6 +254,23 @@ IRI_CDN_NODES = [
     "indiarailinfo.com"
 ]
 
+def _solve_challenge_on_session(session: curl_requests.Session, html: str, domain: str) -> bool:
+    """Solve IndiaRailInfo browser verification challenge automatically."""
+    try:
+        sig_match = re.search(r"data-sig=['\"]([^'\"]+)['\"]", html)
+        if sig_match:
+            sig = sig_match.group(1)
+            x_val = sig.split("|")[-1] if "|" in sig else "55"
+            token = f"0:5:2:1:8:1:1:0:{x_val}:{sig}:0"
+            verify_url = f"https://{domain}/verify-browser?t={token}"
+            rv = session.get(verify_url, timeout=8)
+            print(f"[RENDER LOG] 🔐 Solved Challenge on {domain} -> HTTP {rv.status_code} ({rv.text.strip()[:30]})", flush=True)
+            time.sleep(0.4)
+            return rv.status_code == 200
+    except Exception as e:
+        print(f"[RENDER LOG] ⚠️ Challenge solver exception on {domain}: {e}", flush=True)
+    return False
+
 def _get_active_iri_session() -> tuple[curl_requests.Session, str]:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -274,18 +291,11 @@ def _get_active_iri_session() -> tuple[curl_requests.Session, str]:
             session.headers["Referer"] = f"https://{node}/"
             r = session.get(f"https://{node}/", timeout=6)
             print(f"[RENDER LOG] 🌐 Testing CDN Node: {node:25s} -> HTTP {r.status_code} (len: {len(r.text)})", flush=True)
-            if r.status_code == 200 and "iri-xsig" in r.text:
-                soup = BeautifulSoup(r.text, "html.parser")
-                xsig_div = soup.find("div", id="iri-xsig")
-                if xsig_div:
-                    xsig = xsig_div.get("data-sig")
-                    x_val = xsig.split("|")[-1] if "|" in xsig else "24"
-                    verify_url = f"https://{node}/verify-browser?t=0:5:2:1:8:1:1:0:{x_val}:{xsig}:0"
-                    rv = session.get(verify_url, timeout=6)
-                    print(f"[RENDER LOG] 🔐 Challenge Solved on {node} -> HTTP {rv.status_code}", flush=True)
-                    time.sleep(0.3)
-                    print(f"[RENDER LOG] ✅ Connected & Verified on Node: https://{node}/", flush=True)
-                    return session, node
+            if r.status_code == 200:
+                if "data-sig" in r.text or "iri-xsig" in r.text:
+                    _solve_challenge_on_session(session, r.text, node)
+                print(f"[RENDER LOG] ✅ Connected & Verified on Node: https://{node}/", flush=True)
+                return session, node
         except Exception as e:
             print(f"[RENDER LOG] ⚠️ Node {node} check error: {e}", flush=True)
             continue
@@ -295,22 +305,13 @@ def _get_active_iri_session() -> tuple[curl_requests.Session, str]:
     return def_session, "srv1.indiarailinfo.com"
 
 def _solve_iri_challenge_and_fetch(url: str, session: curl_requests.Session) -> str:
+    domain = urllib.parse.urlparse(url).netloc
     try:
         r = session.get(url, timeout=15)
-        if "iri-xsig" in r.text:
+        if ("data-sig" in r.text or "iri-xsig" in r.text) and len(r.text) < 5000:
             print(f"[RENDER LOG] 🔄 Solving inline challenge for {url}...", flush=True)
-            soup = BeautifulSoup(r.text, "html.parser")
-            xsig_div = soup.find("div", id="iri-xsig")
-            if xsig_div:
-                xsig = xsig_div.get("data-sig")
-                x_val = xsig.split("|")[-1] if "|" in xsig else "24"
-                domain = urllib.parse.urlparse(url).netloc
-                verify_url = f"https://{domain}/verify-browser?t=0:5:2:1:8:1:1:0:{x_val}:{xsig}:0"
-                r_v = session.get(verify_url, timeout=8)
-                print(f"[RENDER LOG] 🔐 Inline Challenge Result -> HTTP {r_v.status_code}", flush=True)
-                if r_v.status_code == 200:
-                    time.sleep(0.5)
-                    r = session.get(url, timeout=15)
+            _solve_challenge_on_session(session, r.text, domain)
+            r = session.get(url, timeout=15)
         return r.text
     except Exception as e:
         print(f"[RENDER LOG] ❌ IRI fetch exception for {url}: {e}", flush=True)
@@ -328,6 +329,14 @@ def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str =
         url_internal = f"https://{node}/shtml/list.shtml?LappGetTrainList/{train_no}/0/0/0"
         r_int = session.get(url_internal, headers=headers, timeout=8)
         print(f"[RENDER LOG] 🔍 Internal API query: {url_internal} -> HTTP {r_int.status_code} (len: {len(r_int.text)})", flush=True)
+        
+        # If challenge received on list.shtml, solve and retry
+        if ("data-sig" in r_int.text or "iri-xsig" in r_int.text) and not ("dropdowntable" in r_int.text):
+            print(f"[RENDER LOG] 🔐 Solving challenge on list.shtml for {node}...", flush=True)
+            _solve_challenge_on_session(session, r_int.text, node)
+            r_int = session.get(url_internal, headers=headers, timeout=8)
+            print(f"[RENDER LOG] 🔍 list.shtml Retry -> HTTP {r_int.status_code} (len: {len(r_int.text)})", flush=True)
+
         if r_int.status_code == 200 and "dropdowntable" in r_int.text:
             soup_int = BeautifulSoup(r_int.text, "html.parser")
             for tr in soup_int.find_all("tr", class_=re.compile(r"rowM1", re.IGNORECASE)):
