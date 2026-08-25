@@ -273,6 +273,7 @@ def _get_active_iri_session() -> tuple[curl_requests.Session, str]:
             session.headers.update(headers)
             session.headers["Referer"] = f"https://{node}/"
             r = session.get(f"https://{node}/", timeout=6)
+            print(f"[RENDER LOG] 🌐 Testing CDN Node: {node:25s} -> HTTP {r.status_code} (len: {len(r.text)})", flush=True)
             if r.status_code == 200 and "iri-xsig" in r.text:
                 soup = BeautifulSoup(r.text, "html.parser")
                 xsig_div = soup.find("div", id="iri-xsig")
@@ -280,12 +281,15 @@ def _get_active_iri_session() -> tuple[curl_requests.Session, str]:
                     xsig = xsig_div.get("data-sig")
                     x_val = xsig.split("|")[-1] if "|" in xsig else "24"
                     verify_url = f"https://{node}/verify-browser?t=0:5:2:1:8:1:1:0:{x_val}:{xsig}:0"
-                    session.get(verify_url, timeout=6)
+                    rv = session.get(verify_url, timeout=6)
+                    print(f"[RENDER LOG] 🔐 Challenge Solved on {node} -> HTTP {rv.status_code}", flush=True)
                     time.sleep(0.3)
+                    print(f"[RENDER LOG] ✅ Connected & Verified on Node: https://{node}/", flush=True)
                     return session, node
-        except Exception:
+        except Exception as e:
+            print(f"[RENDER LOG] ⚠️ Node {node} check error: {e}", flush=True)
             continue
-    # Fallback to default
+    print("[RENDER LOG] ⚠️ Fallback to default node: srv1.indiarailinfo.com", flush=True)
     def_session = curl_requests.Session(impersonate="chrome124")
     def_session.headers.update(headers)
     return def_session, "srv1.indiarailinfo.com"
@@ -294,6 +298,7 @@ def _solve_iri_challenge_and_fetch(url: str, session: curl_requests.Session) -> 
     try:
         r = session.get(url, timeout=15)
         if "iri-xsig" in r.text:
+            print(f"[RENDER LOG] 🔄 Solving inline challenge for {url}...", flush=True)
             soup = BeautifulSoup(r.text, "html.parser")
             xsig_div = soup.find("div", id="iri-xsig")
             if xsig_div:
@@ -302,12 +307,13 @@ def _solve_iri_challenge_and_fetch(url: str, session: curl_requests.Session) -> 
                 domain = urllib.parse.urlparse(url).netloc
                 verify_url = f"https://{domain}/verify-browser?t=0:5:2:1:8:1:1:0:{x_val}:{xsig}:0"
                 r_v = session.get(verify_url, timeout=8)
+                print(f"[RENDER LOG] 🔐 Inline Challenge Result -> HTTP {r_v.status_code}", flush=True)
                 if r_v.status_code == 200:
                     time.sleep(0.5)
                     r = session.get(url, timeout=15)
         return r.text
     except Exception as e:
-        print(f"  [WARN] IRI fetch exception for {url}: {e}")
+        print(f"[RENDER LOG] ❌ IRI fetch exception for {url}: {e}", flush=True)
         return ""
 
 def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str = "srv1.indiarailinfo.com") -> str:
@@ -321,216 +327,143 @@ def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str =
     try:
         url_internal = f"https://{node}/shtml/list.shtml?LappGetTrainList/{train_no}/0/0/0"
         r_int = session.get(url_internal, headers=headers, timeout=8)
+        print(f"[RENDER LOG] 🔍 Internal API query: {url_internal} -> HTTP {r_int.status_code} (len: {len(r_int.text)})", flush=True)
         if r_int.status_code == 200 and "dropdowntable" in r_int.text:
             soup_int = BeautifulSoup(r_int.text, "html.parser")
             for tr in soup_int.find_all("tr", class_=re.compile(r"rowM1", re.IGNORECASE)):
                 tds = tr.find_all("td")
                 if tds and tds[0].get_text().strip().isdigit():
-                    return tds[0].get_text().strip()
+                    slug_id = tds[0].get_text().strip()
+                    print(f"[RENDER LOG] 🎯 Resolved Train {train_no} -> Slug ID: {slug_id}", flush=True)
+                    return slug_id
     except Exception as e:
-        print(f"  [WARN] Internal API slug strategy failed for {train_no}: {e}")
+        print(f"[RENDER LOG] ⚠️ Internal API slug strategy error for {train_no}: {e}", flush=True)
 
+    print(f"[RENDER LOG] ℹ️ Using default train_no as slug: {train_no}", flush=True)
     return train_no
 
 def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
     train_no = str(train_no).strip()
-    print(f"  {C.B_CYAN}🔍 [IRI]{C.RESET} Fetching Schedule for Train {C.B_YELLOW}{train_no}{C.RESET}...")
+    print(f"  {C.B_CYAN}🔍 [IRI]{C.RESET} Fetching Schedule for Train {C.B_YELLOW}{train_no}{C.RESET}...", flush=True)
 
     session, node = _get_active_iri_session()
     train_id = _resolve_iri_slug(train_no, session, node)
     iri_url = f"https://{node}/train/{train_id}"
-    print(f"  {C.CYAN}🔗 [IRI Source URL]{C.RESET} {C.DIM}-> {iri_url}{C.RESET}")
-
-    print(f"  {C.CYAN}🔗 [IRI Source URL]{C.RESET} {C.DIM}-> {iri_url}{C.RESET}")
+    print(f"  {C.CYAN}🔗 [IRI Source URL]{C.RESET} {C.DIM}-> {iri_url}{C.RESET}", flush=True)
 
     try:
-
         html = _solve_iri_challenge_and_fetch(iri_url, session)
-
         if not html or len(html) < 5000:
-
+            print(f"[RENDER LOG] ⚠️ HTML size ({len(html)} bytes) too small. Retrying in 1s...", flush=True)
             time.sleep(1)
-
             html = _solve_iri_challenge_and_fetch(iri_url, session)
 
+        print(f"[RENDER LOG] 📥 HTML fetched: {len(html)} bytes for Train {train_no}", flush=True)
         if not html or len(html) < 5000:
-
-            print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Train {C.B_YELLOW}{train_no}{C.RESET} not found on IndiaRailInfo.")
-
+            print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Train {C.B_YELLOW}{train_no}{C.RESET} not found on IndiaRailInfo.", flush=True)
             return None
 
         soup = BeautifulSoup(html, "html.parser")
-
         title = soup.title.string if soup.title else f"TRAIN {train_no}"
 
         # Train Name
-
         train_name = f"TRAIN {train_no}"
-
         if "/" in title:
-
             after_slash = title.split("/", 1)[1].strip()
-
             parts = after_slash.split(" - ")
-
             name_parts = []
-
             for p in parts:
-
                 if re.search(r"\b\w+\s+to\s+\w+\b", p, re.IGNORECASE) or "Railway Enquiry" in p or "Zone" in p:
-
                     break
-
                 name_parts.append(p.strip())
-
             if name_parts:
-
                 train_name = _clean_train_name(" - ".join(name_parts))
 
         # Station Codes in exact order
-
         station_codes = []
-
         for a in soup.find_all("a", href=re.compile(r"/station/map/.*#st")):
-
             txt = a.get_text().strip()
-
             if 2 <= len(txt) <= 5 and txt.isupper() and txt not in station_codes:
-
                 station_codes.append(txt)
 
         if len(station_codes) < 2:
-
             for a in soup.find_all("a", href=re.compile(r"/station/")):
-
                 txt = a.get_text().strip()
-
                 if "/" in txt:
-
                     code = txt.split("/")[0].strip()
-
                     if 2 <= len(code) <= 5 and code.isupper() and code not in station_codes:
-
                         station_codes.append(code)
 
         if len(station_codes) < 2:
-
-            print(f"  [WARN] Insufficient station codes found for train {train_no}")
-
+            print(f"[RENDER LOG] ❌ Insufficient station codes ({len(station_codes)}) found for train {train_no}", flush=True)
             return None
 
         origin_code = station_codes[0]
-
         dest_code = station_codes[-1]
 
-        # Safeguard against identical origin and destination codes (e.g. MAS-MAS)
-
+        # Safeguard against identical origin and destination codes
         if origin_code == dest_code and len(station_codes) > 1:
-
             for c in reversed(station_codes):
-
                 if c != origin_code:
-
                     dest_code = c
-
                     break
 
         # Departure & Arrival Times
-
         dep_m = re.search(r"Departs\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", html, re.IGNORECASE | re.DOTALL)
-
         arr_m = re.search(r"Arrives\s*@\s*(?:<[^>]+>\s*)*([0-2]?\d:[0-5]\d)", html, re.IGNORECASE | re.DOTALL)
 
         dep_time = "---"
-
         if dep_m:
-
             parts = dep_m.group(1).split(":")
-
             dep_time = f"{int(parts[0]):02d}{int(parts[1]):02d} hrs"
 
         arr_time = "---"
-
         if arr_m:
-
             parts = arr_m.group(1).split(":")
-
             arr_time = f"{int(parts[0]):02d}{int(parts[1]):02d} hrs"
 
         # Running Days Bitmask
-
         run_days_str = "(DAILY)"
-
         dep_tag = soup.find(string=re.compile(r"Departs\s*@", re.IGNORECASE))
-
         if dep_tag and dep_tag.parent:
-
             dep_cell = dep_tag.parent
-
             grid = dep_cell.find("table", class_=re.compile(r"deparrgrid"))
-
             if grid:
-
                 tds = grid.find_all("td")
-
                 if len(tds) == 7:
-
                     bits = []
-
                     for td in tds:
-
                         style = str(td.get("style", ""))
-
                         if "opacity" in style and ("0.2" in style or "0.3" in style or "0.4" in style):
-
                             bits.append("0")
-
                         else:
-
                             bits.append("1")
-
                     mon_sun_bits = bits[1:] + bits[:1]
-
                     run_days_str = _format_run_days("".join(mon_sun_bits))
 
         # Coaches
-
         coaches_str = "20 Coaches"
-
         coach_match = re.search(r"(\d+)\s*(?:LHB|ICF)?\s*Coaches", html, re.IGNORECASE)
-
         if coach_match:
-
             coaches_str = f"{coach_match.group(1)} Coaches"
 
-        print(f"  {C.B_GREEN}✅ [OK]{C.RESET} Successfully fetched Train {C.B_YELLOW}{train_no}{C.RESET} ({C.B_WHITE}{train_name}{C.RESET}) [{dep_time} - {arr_time}]")
+        print(f"[RENDER LOG] 🚉 Train {train_no} Parsed: {train_name} | {origin_code} -> {dest_code} | Dep: {dep_time} | Arr: {arr_time} | Stations: {len(station_codes)}", flush=True)
+        print(f"  {C.B_GREEN}✅ [OK]{C.RESET} Successfully fetched Train {C.B_YELLOW}{train_no}{C.RESET} ({C.B_WHITE}{train_name}{C.RESET}) [{dep_time} - {arr_time}]", flush=True)
 
         return {
-
             "train_number":  train_no,
-
             "train_name":    train_name,
-
             "origin_code":   origin_code,
-
             "dest_code":     dest_code,
-
             "dep_time":      dep_time,
-
             "arr_time":      arr_time,
-
             "run_days":      run_days_str,
-
             "station_codes": station_codes,
-
             "coaches":       coaches_str,
-
         }
 
     except Exception as e:
-
-        print(f"  [ERROR] IndiaRailInfo scraper error for train {train_no}: {e}")
-
+        print(f"[RENDER LOG] ❌ IndiaRailInfo scraper error for train {train_no}: {e}", flush=True)
         return None
 
 def _suffix_clean(name: str) -> str:
@@ -1296,6 +1229,7 @@ async def generate_schedule_stream(req: ScheduleRequest):
             out_path = os.path.join(BASE_DIR, fname)
 
             doc.save(out_path)
+            print(f"[RENDER LOG] 📦 Word Document saved: {out_path} ({os.path.getsize(out_path)} bytes)", flush=True)
 
             _increment_stats(generated)
 
@@ -1322,6 +1256,7 @@ async def generate_schedule_stream(req: ScheduleRequest):
 @app.get("/download-file/{filename}")
 
 def download_file(filename: str, background_tasks: BackgroundTasks):
+    print(f"[RENDER LOG] 📤 Serving download for {filename}...", flush=True)
 
     safe_name = os.path.basename(filename)
 
