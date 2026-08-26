@@ -250,6 +250,19 @@ def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
 # SECTION 1.5 - OFFLINE MASTER DATASET FAIL-SAFE CACHE (3,596+ TRAINS)
 # ==============================================================================
 
+import socket
+
+def is_internet_available() -> bool:
+    """Fast 0.3s socket check to determine if outbound internet is alive."""
+    try:
+        socket.setdefaulttimeout(0.35)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(("1.1.1.1", 53))
+        s.close()
+        return True
+    except Exception:
+        return False
+
 MASTER_DB_CACHE: dict = {}
 
 def _load_master_db():
@@ -535,6 +548,30 @@ def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str =
 
 def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
     train_no = str(train_no).strip()
+
+    # ── INSTANT ZERO-DELAY OFFLINE FAST-PATH ───────────────────────────────────
+    if not is_internet_available():
+        print(f"[RENDER LOG] 🔌 [OFFLINE DETECTED] No active internet. Instantly loading Train {train_no} from Offline Master Database...", flush=True)
+        if train_no in MASTER_DB_CACHE:
+            cached = MASTER_DB_CACHE[train_no]
+            print(f"[RENDER LOG] 🛡️ [OFFLINE SERVED] Train {train_no}: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
+            return {
+                "train_number":  train_no,
+                "train_name":    cached["train_name"],
+                "origin_code":   cached["origin_code"] or "SRC",
+                "dest_code":     cached["dest_code"] or "DST",
+                "dep_time":      "---",
+                "arr_time":      "---",
+                "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
+                "coaches":       "20 Coaches",
+                "run_days":      cached["running_days"],
+                "data_source":   "offline_backup",
+                "source_notice": "🔌 Offline Mode (No Internet) - Loaded from Master Offline Database"
+            }
+        else:
+            print(f"[RENDER LOG] ❌ Train {train_no} not found in offline database and no internet available.", flush=True)
+            return None
+
     print(f"  {C.B_CYAN}🔍 [IRI]{C.RESET} Fetching Schedule for Train {C.B_YELLOW}{train_no}{C.RESET}...", flush=True)
 
     session, node = _get_active_iri_session()
