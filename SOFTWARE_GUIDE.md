@@ -1,6 +1,6 @@
-# 🚂 IRCTC Tender Schedule Generator - Ekdam Desi / Dehati Guide (v3.3)
+# 🚂 IRCTC Tender Schedule Generator - Ekdam Desi / Dehati Guide (v3.5)
 
-> **Pranaam Bhaiya!** Ye hai aapke IRCTC Tender Schedule Generator software (v3.3) ki poori kahani — ekdam aasan desi/dehati bhasha me, bina kisi bhabhka ke! 🚆✨
+> **Pranaam Bhaiya!** Ye hai aapke IRCTC Tender Schedule Generator software (v3.5 - Fail-Safe Dual-Engine Edition) ki poori kahani — ekdam aasan desi/dehati bhasha me! 🚆✨
 
 ---
 
@@ -13,27 +13,31 @@
 
 ## 💡 Ye Software Kaho Toh Hai Kya?
 
-Pehle kya hota tha? Tender ka schedule banane me ghanto lagte the — IRCTC ki website kholo, cookie-token copy karo, captcha bharo, ek-ek train search karo aur MS Word me haath se table banao. 
+Pehle kya hota tha? Tender ka schedule banane me ghanto lagte the — IRCTC ki website kholo, cookie-token copy karo, captcha bharo, ek-ek train search karo aur MS Word me haath se table banao.
 
 Ab ye sab jhanjhat **KHATAM**! Ye software bina kisi login, cookie ya captcha ke **IndiaRailInfo** se live train data khud khinch ke lata hai aur seconds me **ekdam chakachak MS Word (.docx) tender schedule file** ready karke de deta hai.
 
 ---
 
-## ⚡ v3.3 Engine Ki Khas Superpowers (Cloud Compatibility Fix)
+## ⚡ v3.5 Engine Ki Khas Superpowers (Fail-Safe Dual-Engine)
 
-1. **Dynamic Multi-Node CDN Failover Engine (`v3.3`)**:
-   * IndiaRailInfo ke paas multiple server nodes hain (`srv1`, `srv3`, `srv2`, `m`, `indiarailinfo.com`).
-   * Cloud ya Render par agar koi ek node block ya rate-limit hota hai, software automatically dusre unblocked node se connect kar leta hai. 100% 24/7 uptime!
+1. **Fail-Safe Dual-Engine (0% Downtime Guarantee)**:
+   * **Primary Engine (Live Scraping)**: Direct IndiaRailInfo se live high-speed scraping (`srv1`, `srv3`, etc.).
+   * **Secondary Engine (Offline Master Backup)**: Agar internet chala gaya ya website block hui, toh software rukega nahi! Backend me lage **4,485 Trains aur 2,361 Train Pairs** ke Master Database (`backend/all_india_train_pairs_master.json`) se data utha kar Word file ready kar dega!
 
-2. **Inline Universal JS Verification Challenge Solver**:
-   * IndiaRailInfo ke security guard (`iri-xsig` / `data-sig`) ko software real-time decode karke automatically handshake pass kar leta hai (`0:5:2:1:8:1:1:0:{x_val}:{xsig}:0`).
-   * Root page ho, direct autocomplete API ho ya train page — har jagah verification auto-solve hoti hai.
+2. **🧠 Auto-Learning Engine (Nayi Trains Khud Save Ho Jayengi)**:
+   * Agar koi nayi Vande Bharat / Amrit Bharat ya Special train launch hui jo database me pehle nahi thi:
+   * Software use online live scrape karega aur **hamesha ke liye offline database me auto-save kar dega!**
 
-3. **Real Chrome 124 TLS Fingerprinting**:
-   * `curl_cffi` ke sath real desktop browser TLS fingerprint bhejta hai, jisse Render ke cloud server ko Cloudflare firewall block nahi karta.
+3. **📢 Transparent Fallback Warning**:
+   * Agar online data na milne par offline backup use hota hai, toh software terminal aur logs me saaf amber warning show karega:
+     `⚠️ [OFFLINE BACKUP] Online data nahi mila tha (Scraper failed) -> Train ka data Master Offline Database se liya gaya hai.`
 
-4. **Real-Time Unbuffered `[RENDER LOG]` Stream**:
-   * Render dashboard ke logs me har step (CDN Discovery, Slug Resolution, Station Parsing, Document Creation) crystal-clear live dikhta hai.
+4. **Inline Universal JS Verification Challenge Solver**:
+   * IndiaRailInfo ke security token ko real-time auto-solve karke handshake pass karta hai.
+
+5. **Real Chrome 124 TLS Fingerprinting**:
+   * `curl_cffi` ke sath real desktop browser TLS fingerprint bhejta hai, jisse Render cloud server ko Cloudflare firewall block nahi karta.
 
 ---
 
@@ -52,8 +56,6 @@ Har tender ka format alag hota hai, isliye aap 5 alag-alag types me se chun sakt
 3. **WCB Schedule**: Jisme niche `Coaches` (e.g. `20 Coaches`) ki extra row jud jati hai.
 4. **TOD Schedule**: Jisme `UPTO <Date/Station>` daalne ke alag boxes aate hain. *(Mandatory: UPTO details fill karna zaroori hai!)*
 5. **TOD+WCB Schedule**: TOD aur WCB dono ka zabardast combo!
-
-> **⚠️ Strict Input Validation Guard**: TOD ya Sections select karne par agar aapne unke required textboxes (`UPTO Date` ya `Excluded Sections`) nahi bhare, toh system warning alert dega aur khali box par focus kar dega. Galat ya adhoora pair add nahi hone dega!
 
 ---
 
@@ -80,7 +82,3 @@ Agar aapko check karna hai ki Render cloud par code kaise execute hota hai, toh 
 ```bash
 python test_cloud_simulation.py
 ```
-Yeh script automatically:
-- Active CDN nodes check karegi
-- 3 train pairs (`22363-64`, `12601-02`, `03639-03639`) live scrape karegi
-- Word `.docx` file generate karke test report de degi!
