@@ -246,6 +246,61 @@ def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
 
     return nums[0]
 
+# ==============================================================================
+# SECTION 1.5 - OFFLINE MASTER DATASET FAIL-SAFE CACHE (3,596+ TRAINS)
+# ==============================================================================
+
+MASTER_DB_CACHE: dict = {}
+
+def _load_master_db():
+    global MASTER_DB_CACHE
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), "all_india_train_pairs_master.json"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "all_india_train_pairs_master.json"),
+        os.path.join(os.getcwd(), "all_india_train_pairs_master.json"),
+        os.path.join(os.getcwd(), "backend", "all_india_train_pairs_master.json")
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for pair in data.get("train_pairs", []):
+                        if pair.get("up_train"):
+                            up = pair["up_train"]
+                            MASTER_DB_CACHE[str(up["number"]).strip()] = {
+                                "train_number": str(up["number"]).strip(),
+                                "train_name": up.get("name", f"TRAIN {up['number']}"),
+                                "origin_code": up.get("origin_code", ""),
+                                "origin_name": up.get("origin_name", ""),
+                                "dest_code": up.get("dest_code", ""),
+                                "dest_name": up.get("dest_name", ""),
+                                "running_days": up.get("running_days", "(DAILY)"),
+                                "slug": up.get("slug", str(up["number"])),
+                                "train_type": pair.get("train_type", "Express"),
+                                "zone": pair.get("zone", "IR")
+                            }
+                        if pair.get("down_train"):
+                            dn = pair["down_train"]
+                            MASTER_DB_CACHE[str(dn["number"]).strip()] = {
+                                "train_number": str(dn["number"]).strip(),
+                                "train_name": dn.get("name", f"TRAIN {dn['number']}"),
+                                "origin_code": dn.get("origin_code", ""),
+                                "origin_name": dn.get("origin_name", ""),
+                                "dest_code": dn.get("dest_code", ""),
+                                "dest_name": dn.get("dest_name", ""),
+                                "running_days": dn.get("running_days", "(DAILY)"),
+                                "slug": dn.get("slug", str(dn["number"])),
+                                "train_type": pair.get("train_type", "Express"),
+                                "zone": pair.get("zone", "IR")
+                            }
+                print(f"[RENDER LOG] 🛡️ Master Train Database Loaded: {len(MASTER_DB_CACHE)} trains in offline fail-safe cache.", flush=True)
+                return
+            except Exception as e:
+                print(f"[RENDER LOG] ⚠️ Error loading master database from {p}: {e}", flush=True)
+
+_load_master_db()
+
 IRI_CDN_NODES = [
     "srv1.indiarailinfo.com",
     "srv3.indiarailinfo.com",
@@ -340,6 +395,13 @@ def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
 
 def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str = "srv1.indiarailinfo.com") -> str:
     train_no = str(train_no).strip()
+    
+    # Strategy 0: Instant Master Dataset Slug Shortcut
+    if train_no in MASTER_DB_CACHE and MASTER_DB_CACHE[train_no].get("slug"):
+        master_slug = MASTER_DB_CACHE[train_no]["slug"]
+        if master_slug and master_slug.isdigit() and len(master_slug) >= 3:
+            print(f"[RENDER LOG] ⚡ Instant Master DB Slug for {train_no} -> {master_slug}", flush=True)
+            return master_slug
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": f"https://{node}/"
@@ -422,7 +484,22 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
 
         print(f"[RENDER LOG] 📥 HTML fetched: {len(html)} bytes for Train {train_no}", flush=True)
         if not html or len(html) < 5000:
-            print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Train {C.B_YELLOW}{train_no}{C.RESET} not found on IndiaRailInfo.", flush=True)
+            print(f"[RENDER LOG] ⚠️ Online scraping failed for Train {train_no}. Checking Offline Master Cache...", flush=True)
+            if train_no in MASTER_DB_CACHE:
+                cached = MASTER_DB_CACHE[train_no]
+                print(f"[RENDER LOG] 🛡️ [OFFLINE FAIL-SAFE ACTIVATED] Loaded Train {train_no} from Master Database: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
+                return {
+                    "train_number":  train_no,
+                    "train_name":    cached["train_name"],
+                    "origin_code":   cached["origin_code"] or "SRC",
+                    "dest_code":     cached["dest_code"] or "DST",
+                    "dep_time":      "---",
+                    "arr_time":      "---",
+                    "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
+                    "coaches":       "20 Coaches",
+                    "run_days":      cached["running_days"]
+                }
+            print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Train {C.B_YELLOW}{train_no}{C.RESET} not found on IndiaRailInfo or Offline Master Cache.", flush=True)
             return None
 
         soup = BeautifulSoup(html, "html.parser")
