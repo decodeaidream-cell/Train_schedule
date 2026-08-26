@@ -317,6 +317,27 @@ def _solve_iri_challenge_and_fetch(url: str, session: curl_requests.Session) -> 
         print(f"[RENDER LOG] ❌ IRI fetch exception for {url}: {e}", flush=True)
         return ""
 
+def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
+    if not url:
+        return None
+    patterns = [
+        r'/train/[^/]+/(\d+)',
+        r'/train/(\d+)',
+        r'indiarailinfo\.com/train/[^/]+/(\d+)',
+        r'indiarailinfo\.com/train/(\d+)'
+    ]
+    for pat in patterns:
+        m = re.search(pat, url)
+        if m:
+            candidate = m.group(1)
+            if candidate != train_no and len(candidate) >= 3:
+                return candidate
+    nums = re.findall(r'\b\d{3,7}\b', url)
+    for num in nums:
+        if num != train_no and len(num) >= 3:
+            return num
+    return None
+
 def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str = "srv1.indiarailinfo.com") -> str:
     train_no = str(train_no).strip()
     headers = {
@@ -327,15 +348,13 @@ def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str =
     # Strategy 1: IndiaRailInfo Official Direct Internal API
     try:
         url_internal = f"https://{node}/shtml/list.shtml?LappGetTrainList/{train_no}/0/0/0"
-        r_int = session.get(url_internal, headers=headers, timeout=8)
+        r_int = session.get(url_internal, headers=headers, timeout=6)
         print(f"[RENDER LOG] 🔍 Internal API query: {url_internal} -> HTTP {r_int.status_code} (len: {len(r_int.text)})", flush=True)
         
-        # If challenge received on list.shtml, solve and retry
         if ("data-sig" in r_int.text or "iri-xsig" in r_int.text) and not ("dropdowntable" in r_int.text):
             print(f"[RENDER LOG] 🔐 Solving challenge on list.shtml for {node}...", flush=True)
             _solve_challenge_on_session(session, r_int.text, node)
-            r_int = session.get(url_internal, headers=headers, timeout=8)
-            print(f"[RENDER LOG] 🔍 list.shtml Retry -> HTTP {r_int.status_code} (len: {len(r_int.text)})", flush=True)
+            r_int = session.get(url_internal, headers=headers, timeout=6)
 
         if r_int.status_code == 200 and "dropdowntable" in r_int.text:
             soup_int = BeautifulSoup(r_int.text, "html.parser")
@@ -343,10 +362,44 @@ def _resolve_iri_slug(train_no: str, session: curl_requests.Session, node: str =
                 tds = tr.find_all("td")
                 if tds and tds[0].get_text().strip().isdigit():
                     slug_id = tds[0].get_text().strip()
-                    print(f"[RENDER LOG] 🎯 Resolved Train {train_no} -> Slug ID: {slug_id}", flush=True)
+                    print(f"[RENDER LOG] 🎯 Direct API Resolved Train {train_no} -> Slug ID: {slug_id}", flush=True)
                     return slug_id
     except Exception as e:
         print(f"[RENDER LOG] ⚠️ Internal API slug strategy error for {train_no}: {e}", flush=True)
+
+    # Strategy 2: DuckDuckGo HTML Search Indexing
+    try:
+        url_ddg = f"https://html.duckduckgo.com/html/?q=site:indiarailinfo.com+train+{train_no}"
+        r_ddg = session.get(url_ddg, headers=headers, timeout=6)
+        if r_ddg.status_code == 200:
+            soup_ddg = BeautifulSoup(r_ddg.text, "html.parser")
+            for a in soup_ddg.find_all("a"):
+                href = a.get("href", "")
+                if "indiarailinfo.com/train/" in href or "uddg=" in href:
+                    unquoted = urllib.parse.unquote(href)
+                    tid = _extract_id_from_url(unquoted, train_no)
+                    if tid:
+                        print(f"[RENDER LOG] 🎯 DuckDuckGo Resolved Train {train_no} -> Slug ID: {tid}", flush=True)
+                        return tid
+    except Exception as e:
+        print(f"[RENDER LOG] ⚠️ DDG search slug strategy error for {train_no}: {e}", flush=True)
+
+    # Strategy 3: Yahoo Search Indexing
+    try:
+        url_y = f"https://search.yahoo.com/search?p=site:indiarailinfo.com+train+{train_no}"
+        r_y = session.get(url_y, headers=headers, timeout=6)
+        if r_y.status_code == 200:
+            soup_y = BeautifulSoup(r_y.text, "html.parser")
+            for a in soup_y.find_all("a"):
+                href = a.get("href", "")
+                if "RU=" in href:
+                    unquoted = urllib.parse.unquote(href)
+                    tid = _extract_id_from_url(unquoted, train_no)
+                    if tid:
+                        print(f"[RENDER LOG] 🎯 Yahoo Resolved Train {train_no} -> Slug ID: {tid}", flush=True)
+                        return tid
+    except Exception as e:
+        print(f"[RENDER LOG] ⚠️ Yahoo search slug strategy error for {train_no}: {e}", flush=True)
 
     print(f"[RENDER LOG] ℹ️ Using default train_no as slug: {train_no}", flush=True)
     return train_no
