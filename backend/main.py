@@ -247,6 +247,53 @@ def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
     return nums[0]
 
 # ==============================================================================
+# ==============================================================================
+# SECTION 1.4 - RUN DAYS FORMATTER & NORMALIZER
+# ==============================================================================
+
+DAY_MAP = {
+    "M": "MON", "MO": "MON", "MON": "MON",
+    "TU": "TUE", "TUE": "TUE",
+    "W": "WED", "WE": "WED", "WED": "WED",
+    "TH": "THU", "THU": "THU",
+    "F": "FRI", "FR": "FRI", "FRI": "FRI",
+    "SA": "SAT", "SAT": "SAT",
+    "SU": "SUN", "SUN": "SUN"
+}
+
+def _format_run_days(days_input: str) -> str:
+    """Converts bitmasks (e.g. 0000010) or short strings (e.g. 'Sa', 'Tu,F') into standard IRCTC format."""
+    if not days_input or str(days_input).strip() == "":
+        return "(DAILY)"
+    s = str(days_input).strip()
+    if s.upper() in ("DAILY", "(DAILY)"):
+        return "(DAILY)"
+    
+    # 7-char bitmask (Mon-Sun)
+    if len(s) == 7 and all(c in "01" for c in s):
+        names = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+        active = [names[i] for i, b in enumerate(s) if b == "1"]
+        if len(active) == 7 or not active:
+            return "(DAILY)"
+        count_str = f"{len(active):02d} DAY" if len(active) == 1 else f"{len(active):02d} DAYS"
+        return f"{count_str} ({', '.join(active)})"
+    
+    # Already formatted e.g. '01 DAY (SAT)'
+    if re.match(r"^\d{2}\s+DAYS?\s*\(.*\)$", s, re.IGNORECASE):
+        return s.upper()
+        
+    # Short codes like 'Sa', 'Tu,F', 'M,W,F'
+    tokens = [t.strip().upper() for t in re.split(r"[,/ ]+", s) if t.strip()]
+    parsed_days = []
+    for t in tokens:
+        if t in DAY_MAP and DAY_MAP[t] not in parsed_days:
+            parsed_days.append(DAY_MAP[t])
+            
+    if not parsed_days or len(parsed_days) == 7:
+        return "(DAILY)"
+    count_str = f"{len(parsed_days):02d} DAY" if len(parsed_days) == 1 else f"{len(parsed_days):02d} DAYS"
+    return f"{count_str} ({', '.join(parsed_days)})"
+
 # SECTION 1.5 - OFFLINE MASTER DATASET FAIL-SAFE CACHE (3,596+ TRAINS)
 # ==============================================================================
 
@@ -281,29 +328,41 @@ def _load_master_db():
                     for pair in data.get("train_pairs", []):
                         if pair.get("up_train"):
                             up = pair["up_train"]
-                            MASTER_DB_CACHE[str(up["number"]).strip()] = {
-                                "train_number": str(up["number"]).strip(),
-                                "train_name": up.get("name", f"TRAIN {up['number']}"),
+                            tn = str(up["number"]).strip()
+                            st_codes = up.get("station_codes") or ([up.get("origin_code"), up.get("dest_code")] if up.get("origin_code") and up.get("dest_code") else [])
+                            MASTER_DB_CACHE[tn] = {
+                                "train_number": tn,
+                                "train_name": up.get("name", f"TRAIN {tn}"),
                                 "origin_code": up.get("origin_code", ""),
                                 "origin_name": up.get("origin_name", ""),
                                 "dest_code": up.get("dest_code", ""),
                                 "dest_name": up.get("dest_name", ""),
-                                "running_days": up.get("running_days", "(DAILY)"),
-                                "slug": up.get("slug", str(up["number"])),
+                                "dep_time": up.get("dep_time", "---"),
+                                "arr_time": up.get("arr_time", "---"),
+                                "station_codes": st_codes,
+                                "coaches": up.get("coaches", "20 Coaches"),
+                                "running_days": _format_run_days(up.get("running_days", "(DAILY)")),
+                                "slug": up.get("slug", tn),
                                 "train_type": pair.get("train_type", "Express"),
                                 "zone": pair.get("zone", "IR")
                             }
                         if pair.get("down_train"):
                             dn = pair["down_train"]
-                            MASTER_DB_CACHE[str(dn["number"]).strip()] = {
-                                "train_number": str(dn["number"]).strip(),
-                                "train_name": dn.get("name", f"TRAIN {dn['number']}"),
+                            tn = str(dn["number"]).strip()
+                            st_codes = dn.get("station_codes") or ([dn.get("origin_code"), dn.get("dest_code")] if dn.get("origin_code") and dn.get("dest_code") else [])
+                            MASTER_DB_CACHE[tn] = {
+                                "train_number": tn,
+                                "train_name": dn.get("name", f"TRAIN {tn}"),
                                 "origin_code": dn.get("origin_code", ""),
                                 "origin_name": dn.get("origin_name", ""),
                                 "dest_code": dn.get("dest_code", ""),
                                 "dest_name": dn.get("dest_name", ""),
-                                "running_days": dn.get("running_days", "(DAILY)"),
-                                "slug": dn.get("slug", str(dn["number"])),
+                                "dep_time": dn.get("dep_time", "---"),
+                                "arr_time": dn.get("arr_time", "---"),
+                                "station_codes": st_codes,
+                                "coaches": dn.get("coaches", "20 Coaches"),
+                                "running_days": _format_run_days(dn.get("running_days", "(DAILY)")),
+                                "slug": dn.get("slug", tn),
                                 "train_type": pair.get("train_type", "Express"),
                                 "zone": pair.get("zone", "IR")
                             }
@@ -328,7 +387,11 @@ def _save_new_train_to_master_db(train_data: dict, slug: str = ""):
             "origin_name": "",
             "dest_code": train_data.get("dest_code", ""),
             "dest_name": "",
-            "running_days": train_data.get("run_days", "(DAILY)"),
+            "dep_time": train_data.get("dep_time", "---"),
+            "arr_time": train_data.get("arr_time", "---"),
+            "station_codes": train_data.get("station_codes", []),
+            "coaches": train_data.get("coaches", "20 Coaches"),
+            "running_days": _format_run_days(train_data.get("run_days", "(DAILY)")),
             "slug": slug or tn,
             "train_type": "Express",
             "zone": "IR"
@@ -560,11 +623,11 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                 "train_name":    cached["train_name"],
                 "origin_code":   cached["origin_code"] or "SRC",
                 "dest_code":     cached["dest_code"] or "DST",
-                "dep_time":      "---",
-                "arr_time":      "---",
-                "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
-                "coaches":       "20 Coaches",
-                "run_days":      cached["running_days"],
+                "dep_time":      cached.get("dep_time", "---"),
+                "arr_time":      cached.get("arr_time", "---"),
+                "station_codes": cached.get("station_codes") or ([cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"]),
+                "coaches":       cached.get("coaches", "20 Coaches"),
+                "run_days":      _format_run_days(cached.get("running_days", "(DAILY)")),
                 "data_source":   "offline_backup",
                 "source_notice": "🔌 Offline Mode (No Internet) - Loaded from Master Offline Database"
             }
@@ -597,11 +660,11 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                     "train_name":    cached["train_name"],
                     "origin_code":   cached["origin_code"] or "SRC",
                     "dest_code":     cached["dest_code"] or "DST",
-                    "dep_time":      "---",
-                    "arr_time":      "---",
-                    "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
-                    "coaches":       "20 Coaches",
-                    "run_days":      cached["running_days"],
+                    "dep_time":      cached.get("dep_time", "---"),
+                    "arr_time":      cached.get("arr_time", "---"),
+                    "station_codes": cached.get("station_codes") or ([cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"]),
+                    "coaches":       cached.get("coaches", "20 Coaches"),
+                    "run_days":      _format_run_days(cached.get("running_days", "(DAILY)")),
                     "data_source":   "offline_backup",
                     "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
                 }
@@ -649,11 +712,11 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                     "train_name":    cached["train_name"],
                     "origin_code":   cached["origin_code"] or "SRC",
                     "dest_code":     cached["dest_code"] or "DST",
-                    "dep_time":      "---",
-                    "arr_time":      "---",
-                    "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
-                    "coaches":       "20 Coaches",
-                    "run_days":      cached["running_days"],
+                    "dep_time":      cached.get("dep_time", "---"),
+                    "arr_time":      cached.get("arr_time", "---"),
+                    "station_codes": cached.get("station_codes") or ([cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"]),
+                    "coaches":       cached.get("coaches", "20 Coaches"),
+                    "run_days":      _format_run_days(cached.get("running_days", "(DAILY)")),
                     "data_source":   "offline_backup",
                     "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
                 }
