@@ -301,6 +301,73 @@ def _load_master_db():
 
 _load_master_db()
 
+def _save_new_train_to_master_db(train_data: dict, slug: str = ""):
+    """Automatically learns and saves newly discovered trains to the offline master JSON."""
+    try:
+        tn = str(train_data.get("train_number", "")).strip()
+        if not tn or tn in MASTER_DB_CACHE:
+            return
+
+        entry = {
+            "train_number": tn,
+            "train_name": train_data.get("train_name", f"TRAIN {tn}"),
+            "origin_code": train_data.get("origin_code", ""),
+            "origin_name": "",
+            "dest_code": train_data.get("dest_code", ""),
+            "dest_name": "",
+            "running_days": train_data.get("run_days", "(DAILY)"),
+            "slug": slug or tn,
+            "train_type": "Express",
+            "zone": "IR"
+        }
+        MASTER_DB_CACHE[tn] = entry
+
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "all_india_train_pairs_master.json"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "all_india_train_pairs_master.json"),
+            os.path.join(os.getcwd(), "all_india_train_pairs_master.json"),
+            os.path.join(os.getcwd(), "backend", "all_india_train_pairs_master.json")
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        db_data = json.load(f)
+                    
+                    # Append new entry
+                    new_pair_entry = {
+                        "pair_id": tn,
+                        "pair_name": f"{tn}, {entry['origin_code']}-{entry['dest_code']}, {entry['train_name']}",
+                        "up_train": {
+                            "number": tn,
+                            "name": entry["train_name"],
+                            "origin_code": entry["origin_code"],
+                            "origin_name": "",
+                            "dest_code": entry["dest_code"],
+                            "dest_name": "",
+                            "running_days": entry["running_days"],
+                            "slug": entry["slug"]
+                        },
+                        "down_train": None,
+                        "train_type": "Express",
+                        "zone": "IR",
+                        "is_special": tn.startswith("0"),
+                        "is_route_symmetric": False,
+                        "status": "Auto-Learned Live"
+                    }
+                    db_data.setdefault("train_pairs", []).append(new_pair_entry)
+                    db_data["metadata"]["total_unique_trains_scanned"] = len(MASTER_DB_CACHE)
+                    db_data["metadata"]["total_pairs_compiled"] = len(db_data["train_pairs"])
+                    
+                    with open(p, "w", encoding="utf-8") as f:
+                        json.dump(db_data, f, indent=2)
+                    print(f"[RENDER LOG] 🧠 [AUTO-LEARN] New Train {tn} ({entry['train_name']}) permanently saved to Master Database ({p})!", flush=True)
+                except Exception as e:
+                    print(f"[RENDER LOG] ⚠️ Auto-learn file save error for {p}: {e}", flush=True)
+    except Exception as e:
+        print(f"[RENDER LOG] ⚠️ Auto-learn general error: {e}", flush=True)
+
+
 IRI_CDN_NODES = [
     "srv1.indiarailinfo.com",
     "srv3.indiarailinfo.com",
@@ -484,10 +551,10 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
 
         print(f"[RENDER LOG] 📥 HTML fetched: {len(html)} bytes for Train {train_no}", flush=True)
         if not html or len(html) < 5000:
-            print(f"[RENDER LOG] ⚠️ Online scraping failed for Train {train_no}. Checking Offline Master Cache...", flush=True)
+            print(f"[RENDER LOG] ⚠️ ⚠️ [SCRAPER FAILED] Online data nahi mila for Train {train_no}! Activating Offline Master Dataset Fallback...", flush=True)
             if train_no in MASTER_DB_CACHE:
                 cached = MASTER_DB_CACHE[train_no]
-                print(f"[RENDER LOG] 🛡️ [OFFLINE FAIL-SAFE ACTIVATED] Loaded Train {train_no} from Master Database: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
+                print(f"[RENDER LOG] 🛡️ [OFFLINE BACKUP IN USE] Train {train_no} loaded from local database: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
                 return {
                     "train_number":  train_no,
                     "train_name":    cached["train_name"],
@@ -497,7 +564,9 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                     "arr_time":      "---",
                     "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
                     "coaches":       "20 Coaches",
-                    "run_days":      cached["running_days"]
+                    "run_days":      cached["running_days"],
+                    "data_source":   "offline_backup",
+                    "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
                 }
             print(f"  {C.B_RED}⚠️ [WARN]{C.RESET} Train {C.B_YELLOW}{train_no}{C.RESET} not found on IndiaRailInfo or Offline Master Cache.", flush=True)
             return None
@@ -534,7 +603,23 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                         station_codes.append(code)
 
         if len(station_codes) < 2:
-            print(f"[RENDER LOG] ❌ Insufficient station codes ({len(station_codes)}) found for train {train_no}", flush=True)
+            print(f"[RENDER LOG] ⚠️ Insufficient stations for {train_no}. Checking Offline Master Cache...", flush=True)
+            if train_no in MASTER_DB_CACHE:
+                cached = MASTER_DB_CACHE[train_no]
+                print(f"[RENDER LOG] 🛡️ [OFFLINE BACKUP IN USE] Train {train_no} loaded from local database: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
+                return {
+                    "train_number":  train_no,
+                    "train_name":    cached["train_name"],
+                    "origin_code":   cached["origin_code"] or "SRC",
+                    "dest_code":     cached["dest_code"] or "DST",
+                    "dep_time":      "---",
+                    "arr_time":      "---",
+                    "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
+                    "coaches":       "20 Coaches",
+                    "run_days":      cached["running_days"],
+                    "data_source":   "offline_backup",
+                    "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
+                }
             return None
 
         origin_code = station_codes[0]
@@ -589,7 +674,7 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         print(f"[RENDER LOG] 🚉 Train {train_no} Parsed: {train_name} | {origin_code} -> {dest_code} | Dep: {dep_time} | Arr: {arr_time} | Stations: {len(station_codes)}", flush=True)
         print(f"  {C.B_GREEN}✅ [OK]{C.RESET} Successfully fetched Train {C.B_YELLOW}{train_no}{C.RESET} ({C.B_WHITE}{train_name}{C.RESET}) [{dep_time} - {arr_time}]", flush=True)
 
-        return {
+        res_data = {
             "train_number":  train_no,
             "train_name":    train_name,
             "origin_code":   origin_code,
@@ -599,97 +684,36 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
             "run_days":      run_days_str,
             "station_codes": station_codes,
             "coaches":       coaches_str,
+            "data_source":   "live_online",
+            "source_notice": "Live Online Data (IndiaRailInfo)"
         }
 
+        # Auto-Learn & Save if new train
+        if train_no not in MASTER_DB_CACHE:
+            _save_new_train_to_master_db(res_data, train_id)
+
+        return res_data
+
     except Exception as e:
-        print(f"[RENDER LOG] ❌ IndiaRailInfo scraper error for train {train_no}: {e}", flush=True)
+        print(f"[RENDER LOG] ⚠️ Exception during online fetch for Train {train_no}: {e}", flush=True)
+        if train_no in MASTER_DB_CACHE:
+            cached = MASTER_DB_CACHE[train_no]
+            print(f"[RENDER LOG] 🛡️ [OFFLINE BACKUP IN USE] Train {train_no} loaded from local database: {cached['train_name']} ({cached['origin_code']} -> {cached['dest_code']})", flush=True)
+            return {
+                "train_number":  train_no,
+                "train_name":    cached["train_name"],
+                "origin_code":   cached["origin_code"] or "SRC",
+                "dest_code":     cached["dest_code"] or "DST",
+                "dep_time":      "---",
+                "arr_time":      "---",
+                "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
+                "coaches":       "20 Coaches",
+                "run_days":      cached["running_days"],
+                "data_source":   "offline_backup",
+                "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
+            }
         return None
 
-def _suffix_clean(name: str) -> str:
-
-    return _SUFFIX_RE.sub("", name).strip()
-
-def _normalise_time(raw: str) -> str:
-
-    """
-
-    Convert times to 'HHMM hrs'.
-
-    Supports dot-separated '20.10' or colon-separated '20:10'.
-
-    """
-
-    if not raw:
-
-        return "---"
-
-    raw = raw.strip()
-
-    if raw.lower() in ("first", "last", "source", "destination",
-
-                       "--", "---", "--:--", "--.--", "0", ""):
-
-        return "---"
-
-    normalised = raw.replace(".", ":")
-
-    parts = normalised.split(":")
-
-    if len(parts) >= 2:
-
-        try:
-
-            hh = int(parts[0])
-
-            mm = int(parts[1])
-
-            return f"{hh:02d}{mm:02d} hrs"
-
-        except ValueError:
-
-            pass
-
-    return raw
-
-def _format_run_days(bitmask: str) -> str:
-
-    """
-
-    Conditional frequency formatting:
-
-      7 days  -> (DAILY)
-
-      4 or 5  -> 04 DAYS (Except – MON, THU, SUN)   [show missing days]
-
-      1,2,3,6 -> 03 DAYS (TUE, THU, SUN)             [show running days]
-
-    Index: 0=MON 1=TUE 2=WED 3=THU 4=FRI 5=SAT 6=SUN
-
-    """
-
-    active  = [_DAY_NAMES[i] for i, c in enumerate(bitmask) if c == "1"]
-
-    missing = [_DAY_NAMES[i] for i, c in enumerate(bitmask) if c == "0"]
-
-    count   = len(active)
-
-    if count == 7 or count == 0:
-
-        return "(DAILY)"
-
-    if count in (4, 5):
-
-        # Show the days it does NOT run — shorter and clearer
-
-        return f"{count:02d} DAYS (Except \u2013 {', '.join(missing)})"
-
-    # 1, 2, 3, or 6 days — show the days it runs
-
-    label = "DAY" if count == 1 else "DAYS"
-
-    return f"{count:02d} {label} ({', '.join(active)})"# ==============================================================================
-
-# SECTION 4 - SMART VIA ALGORITHM
 
 # ==============================================================================
 
