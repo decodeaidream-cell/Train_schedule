@@ -300,15 +300,17 @@ def _format_run_days(days_input: str) -> str:
 import socket
 
 def is_internet_available() -> bool:
-    """Fast 0.3s socket check to determine if outbound internet is alive."""
-    try:
-        socket.setdefaulttimeout(0.35)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("1.1.1.1", 53))
-        s.close()
-        return True
-    except Exception:
-        return False
+    """Fast socket check to determine if outbound internet is alive."""
+    for host in ["8.8.8.8", "1.1.1.1"]:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.8)
+            s.connect((host, 53))
+            s.close()
+            return True
+        except Exception:
+            continue
+    return False
 
 MASTER_DB_CACHE: dict = {}
 
