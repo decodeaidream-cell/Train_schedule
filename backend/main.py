@@ -674,6 +674,26 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
         soup = BeautifulSoup(html, "html.parser")
         title = soup.title.string if soup.title else f"TRAIN {train_no}"
 
+        # Train Number Integrity Validation: Check if fetched page actually matches the requested train_no
+        title_train_match = re.search(r"\b(\d{5})\b", title)
+        if title_train_match and title_train_match.group(1) != train_no:
+            print(f"[RENDER LOG] ⚠️ SLUG MISMATCH DETECTED! Fetched page title has Train {title_train_match.group(1)} but requested Train {train_no}! Falling back to Master Database...", flush=True)
+            if train_no in MASTER_DB_CACHE:
+                cached = MASTER_DB_CACHE[train_no]
+                return {
+                    "train_number":  train_no,
+                    "train_name":    cached["train_name"],
+                    "origin_code":   cached["origin_code"] or "SRC",
+                    "dest_code":     cached["dest_code"] or "DST",
+                    "dep_time":      cached.get("dep_time", "---"),
+                    "arr_time":      cached.get("arr_time", "---"),
+                    "station_codes": cached.get("station_codes") or ([cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"]),
+                    "coaches":       cached.get("coaches", "20 Coaches"),
+                    "run_days":      _format_run_days(cached.get("running_days", "(DAILY)")),
+                    "data_source":   "offline_backup",
+                    "source_notice": "⚠️ Online slug mismatch resolved via Offline Master Database"
+                }
+
         # Train Name
         train_name = f"TRAIN {train_no}"
         if "/" in title:

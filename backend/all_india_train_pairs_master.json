@@ -60570,7 +60570,7 @@
         "dest_code": "MAQ",
         "dest_name": "Mangaluru Central (Mangalore)",
         "running_days": "(DAILY)",
-        "slug": "384",
+        "slug": "1060",
         "dep_time": "2010 hrs",
         "arr_time": "1206 hrs",
         "station_codes": [
@@ -60621,7 +60621,7 @@
         "dest_code": "MAS",
         "dest_name": "MGR Chennai Central",
         "running_days": "(DAILY)",
-        "slug": "385",
+        "slug": "293",
         "dep_time": "1355 hrs",
         "arr_time": "0610 hrs",
         "station_codes": [
