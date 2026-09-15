@@ -38,11 +38,28 @@ function showToast(message) {
     }, 4000);
 }
 
-// Show developer branding on load
+// Show developer branding & initialize on load
 document.addEventListener("DOMContentLoaded", () => {
     showToast("Developed by Suhail 🚀");
     fetchStats();
+    updateEngineStatus();
+    setInterval(fetchStats, 6000); // Auto-sync stats every 6s
 });
+
+window.addEventListener("online", updateEngineStatus);
+window.addEventListener("offline", updateEngineStatus);
+
+function updateEngineStatus() {
+    const statusText = document.getElementById("stat-status-text");
+    if (!statusText) return;
+    if (navigator.onLine) {
+        statusText.textContent = "● Live IndiaRailInfo Scraper Active";
+        statusText.className = "text-[11px] text-emerald-700 font-mono mt-0.5";
+    } else {
+        statusText.textContent = "● Offline Master Database Active";
+        statusText.className = "text-[11px] text-amber-700 font-mono mt-0.5";
+    }
+}
 
 // ── Stats Dashboard ──────────────────────────────────────────────────────────
 async function fetchStats() {
@@ -55,11 +72,22 @@ async function fetchStats() {
         const minutes = data.total_time_saved_minutes || 0;
         const docs    = data.total_generated     || 0;
 
-        document.getElementById("stat-generated").textContent = docs;
+        const genEl = document.getElementById("stat-generated");
+        const timeEl = document.getElementById("stat-time");
+
+        if (genEl && genEl.textContent !== String(docs)) {
+            genEl.textContent = docs;
+            genEl.classList.add("scale-110", "transition-transform");
+            setTimeout(() => genEl.classList.remove("scale-110"), 400);
+        }
 
         const hrs = (minutes / 60);
-        document.getElementById("stat-time").textContent =
-            hrs < 1 ? `${minutes} min` : `${hrs.toFixed(1)} hrs`;
+        const timeStr = hrs < 1 ? `${minutes} min` : `${hrs.toFixed(1)} hrs`;
+        if (timeEl && timeEl.textContent !== timeStr) {
+            timeEl.textContent = timeStr;
+            timeEl.classList.add("scale-110", "transition-transform");
+            setTimeout(() => timeEl.classList.remove("scale-110"), 400);
+        }
     } catch (_) {
         // Stats panel failure is non-critical — silently ignore
     }
