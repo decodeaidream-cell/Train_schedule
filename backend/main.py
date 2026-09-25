@@ -199,10 +199,13 @@ _CLUTTER_PARENS_RE = re.compile(
 
 def _clean_train_name(name: str) -> str:
     """
-    Cleans and extracts core train name, removing redundant origin prefix:
+    Cleans and extracts core train name:
+    - Removes clutter parens
+    - Strips redundant origin station prefix
+    - Shortens 'Express' to 'Exp'
     e.g. 'MGR Chennai Central - Mangaluru Central Mail' -> 'Mangaluru Central Mail'
-         'Rani Kamalapati - New Delhi Shatabdi Express' -> 'New Delhi Shatabdi Express'
-         'Tamil Nadu Express' -> 'Tamil Nadu Express'
+         'Rani Kamalapati - New Delhi Shatabdi Express' -> 'New Delhi Shatabdi Exp'
+         'Tamil Nadu Express' -> 'Tamil Nadu Exp'
     """
     if not name:
         return ""
@@ -216,6 +219,8 @@ def _clean_train_name(name: str) -> str:
         elif len(parts) > 2:
             name = parts[-1].strip()
             
+    # Shorten Express -> Exp
+    name = re.sub(r"\bExpress\b", "Exp", name, flags=re.IGNORECASE)
     name = re.sub(r"\s+", " ", name).strip()
     return name
 
@@ -1015,8 +1020,7 @@ def build_pair_table(doc: Document, up: dict, dn: dict, schedule_type: str = "no
     dn_no = dn["train_number"]
 
     raw_name = _clean_train_name(up.get("train_name", ""))
-
-    name_str = f", {raw_name}" if raw_name else ""
+    name_str = f"  {raw_name}" if raw_name else ""
 
     up_orig = up.get('origin_code', '---')
 
