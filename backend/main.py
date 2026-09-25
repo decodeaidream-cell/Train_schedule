@@ -212,87 +212,61 @@ def _clean_train_name(name: str) -> str:
 
     return name
 
-def _extract_id_from_url(url: str, train_no: str) -> Optional[str]:
-
-    if not url:
-
-        return None
-
-    m = re.search(r"indiarailinfo[.]com/train/(.+)", url)
-
-    if not m:
-
-        return None
-
-    path = m.group(1).split("?")[0]
-
-    segments = [s for s in path.split("/") if s]
-
-    nums = [s for s in segments if s.isdigit()]
-
-    if not nums:
-
-        return None
-
-    if len(nums) == 1:
-
-        return nums[0]
-
-    for num in nums:
-
-        if num != train_no and len(num) >= 3:
-
-            return num
-
-    return nums[0]
-
-# ==============================================================================
 # ==============================================================================
 # SECTION 1.4 - RUN DAYS FORMATTER & NORMALIZER
 # ==============================================================================
 
-DAY_MAP = {
-    "M": "MON", "MO": "MON", "MON": "MON",
-    "TU": "TUE", "TUE": "TUE",
-    "W": "WED", "WE": "WED", "WED": "WED",
-    "TH": "THU", "THU": "THU",
-    "F": "FRI", "FR": "FRI", "FRI": "FRI",
-    "SA": "SAT", "SAT": "SAT",
-    "SU": "SUN", "SUN": "SUN"
+_DAY_ALIASES = {
+    "M": "MON", "MO": "MON", "MON": "MON", "MONDAY": "MON", "MONDAYS": "MON",
+    "T": "TUE", "TU": "TUE", "TUE": "TUE", "TUES": "TUE", "TUESDAY": "TUE", "TUESDAYS": "TUE",
+    "W": "WED", "WE": "WED", "WED": "WED", "WEDNESDAY": "WED", "WEDNESDAYS": "WED",
+    "TH": "THU", "THU": "THU", "THUR": "THU", "THURS": "THU", "THURSDAY": "THU", "THURSDAYS": "THU",
+    "F": "FRI", "FR": "FRI", "FRI": "FRI", "FRIDAY": "FRI", "FRIDAYS": "FRI",
+    "SA": "SAT", "SAT": "SAT", "SATURDAY": "SAT", "SATURDAYS": "SAT",
+    "SU": "SUN", "SUN": "SUN", "SUNDAY": "SUN", "SUNDAYS": "SUN"
 }
 
+_DAY_CANONICAL_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
 def _format_run_days(days_input: str) -> str:
-    """Converts bitmasks (e.g. 0000010) or short strings (e.g. 'Sa', 'Tu,F') into standard IRCTC format."""
+    """Normalizes all day inputs into standard IRCTC format:
+       - 7 days or 'DAILY': '(DAILY)'
+       - 1 day: '01 DAY (SAT)'
+       - 2+ days: '02 DAYS (TUE, FRI)', '03 DAYS (MON, WED, FRI)', etc.
+    """
     if not days_input or str(days_input).strip() == "":
         return "(DAILY)"
-    s = str(days_input).strip()
-    if s.upper() in ("DAILY", "(DAILY)"):
+    
+    s = str(days_input).strip().upper()
+    if s in ("DAILY", "(DAILY)", "ALL DAYS", "EVERYDAY"):
         return "(DAILY)"
     
     # 7-char bitmask (Mon-Sun)
     if len(s) == 7 and all(c in "01" for c in s):
-        names = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-        active = [names[i] for i, b in enumerate(s) if b == "1"]
+        active = [_DAY_CANONICAL_ORDER[i] for i, b in enumerate(s) if b == "1"]
         if len(active) == 7 or not active:
             return "(DAILY)"
         count_str = f"{len(active):02d} DAY" if len(active) == 1 else f"{len(active):02d} DAYS"
         return f"{count_str} ({', '.join(active)})"
     
-    # Already formatted e.g. '01 DAY (SAT)'
-    if re.match(r"^\d{2}\s+DAYS?\s*\(.*\)$", s, re.IGNORECASE):
-        return s.upper()
-        
-    # Short codes like 'Sa', 'Tu,F', 'M,W,F'
-    tokens = [t.strip().upper() for t in re.split(r"[,/ ]+", s) if t.strip()]
+    # Extract all alphabetical word tokens (strips parens, numbers, punctuation)
+    raw_tokens = re.findall(r"[A-Za-z]+", s)
     parsed_days = []
-    for t in tokens:
-        if t in DAY_MAP and DAY_MAP[t] not in parsed_days:
-            parsed_days.append(DAY_MAP[t])
-            
+    for tok in raw_tokens:
+        tok_clean = tok.strip().upper()
+        if tok_clean in ("DAY", "DAYS", "DAYSS", "DAYSSS", "DAILY", "EX", "UPTO", "WEEKLY", "TRAIN"):
+            continue
+        if tok_clean in _DAY_ALIASES:
+            canonical = _DAY_ALIASES[tok_clean]
+            if canonical not in parsed_days:
+                parsed_days.append(canonical)
+                
     if not parsed_days or len(parsed_days) == 7:
         return "(DAILY)"
-    count_str = f"{len(parsed_days):02d} DAY" if len(parsed_days) == 1 else f"{len(parsed_days):02d} DAYS"
-    return f"{count_str} ({', '.join(parsed_days)})"
+        
+    sorted_days = sorted(parsed_days, key=lambda d: _DAY_CANONICAL_ORDER.index(d))
+    count_str = f"{len(sorted_days):02d} DAY" if len(sorted_days) == 1 else f"{len(sorted_days):02d} DAYS"
+    return f"{count_str} ({', '.join(sorted_days)})"
 
 # SECTION 1.5 - OFFLINE MASTER DATASET FAIL-SAFE CACHE (3,596+ TRAINS)
 # ==============================================================================
@@ -1020,12 +994,6 @@ def build_pair_table(doc: Document, up: dict, dn: dict, schedule_type: str = "no
     up_days = up['run_days']
 
     dn_days = dn['run_days']
-
-    if schedule_type in ("tod", "tod_wcb"):
-
-        up_days = up_days.replace("DAY", "DAYS")
-
-        dn_days = dn_days.replace("DAY", "DAYS")
 
     freq_up = f"{up_no}- Ex- {up['origin_code']} - {up_days}"
 
