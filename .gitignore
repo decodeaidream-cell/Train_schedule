@@ -39,5 +39,4 @@ Desktop.ini
 *.log
 tmp/
 
-# Legacy Files
-backend/legacy_irctc.py
+

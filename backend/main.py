@@ -213,7 +213,8 @@ def _clean_train_name(name: str) -> str:
     return name
 
 # ==============================================================================
-# SECTION 1.4 - RUN DAYS FORMATTER & NORMALIZER
+# ==============================================================================
+# SECTION 1.4 - RUN DAYS FORMATTER & NORMALIZER (OFFICIAL IRCTC TENDER STANDARD)
 # ==============================================================================
 
 _DAY_ALIASES = {
@@ -229,32 +230,67 @@ _DAY_ALIASES = {
 _DAY_CANONICAL_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
 def _format_run_days(days_input: str) -> str:
-    """Normalizes all day inputs into standard IRCTC format:
-       - 7 days or 'DAILY': '(DAILY)'
-       - 1 day: '01 DAY (SAT)'
-       - 2+ days: '02 DAYS (TUE, FRI)', '03 DAYS (MON, WED, FRI)', etc.
+    """
+    Normalizes all day inputs into official IRCTC Catering Tender format:
+      - 7 days or 'DAILY': '(DAILY)'
+      - 1 day:  '01 DAY (SAT)'
+      - 2 days: '02 DAYS (TUE, FRI)'
+      - 3 days: '03 DAYS (MON, WED, FRI)'
+      - 4 days: '04 DAYS (Except \u2013 MON, THU, SUN)' [shows 3 missing days]
+      - 5 days: '05 DAYS (Except \u2013 TUE, FRI)'      [shows 2 missing days]
+      - 6 days: '06 DAYS (Except \u2013 SUN)'           [shows 1 missing day]
     """
     if not days_input or str(days_input).strip() == "":
         return "(DAILY)"
     
     s = str(days_input).strip().upper()
-    if s in ("DAILY", "(DAILY)", "ALL DAYS", "EVERYDAY"):
+    if s in ("DAILY", "(DAILY)", "ALL DAYS", "EVERYDAY", "ALL", "7 DAYS", "07 DAYS"):
         return "(DAILY)"
     
     # 7-char bitmask (Mon-Sun)
     if len(s) == 7 and all(c in "01" for c in s):
         active = [_DAY_CANONICAL_ORDER[i] for i, b in enumerate(s) if b == "1"]
-        if len(active) == 7 or not active:
+        missing = [_DAY_CANONICAL_ORDER[i] for i, b in enumerate(s) if b == "0"]
+        count = len(active)
+        if count == 7 or count == 0:
             return "(DAILY)"
-        count_str = f"{len(active):02d} DAY" if len(active) == 1 else f"{len(active):02d} DAYS"
-        return f"{count_str} ({', '.join(active)})"
+        if count in (4, 5, 6):
+            missing_str = ", ".join(missing)
+            return f"{count:02d} DAYS (Except \u2013 {missing_str})"
+        label = "DAY" if count == 1 else "DAYS"
+        active_str = ", ".join(active)
+        return f"{count:02d} {label} ({active_str})"
     
-    # Extract all alphabetical word tokens (strips parens, numbers, punctuation)
+    # Check if EXCEPT is explicitly present in the input text
+    except_match = re.search(r"\b(?:EXCEPT|EXC)\b[:\s\u2013\-]*(.*)", s)
+    if except_match:
+        except_part = except_match.group(1)
+        raw_tokens = re.findall(r"[A-Za-z]+", except_part)
+        missing_days = []
+        for tok in raw_tokens:
+            tok_clean = tok.strip().upper()
+            if tok_clean in _DAY_ALIASES:
+                canonical = _DAY_ALIASES[tok_clean]
+                if canonical not in missing_days:
+                    missing_days.append(canonical)
+        missing_sorted = sorted(missing_days, key=lambda d: _DAY_CANONICAL_ORDER.index(d))
+        active_sorted = [d for d in _DAY_CANONICAL_ORDER if d not in missing_sorted]
+        count = len(active_sorted)
+        if count == 7 or count == 0:
+            return "(DAILY)"
+        if count in (4, 5, 6):
+            missing_str = ", ".join(missing_sorted)
+            return f"{count:02d} DAYS (Except \u2013 {missing_str})"
+        label = "DAY" if count == 1 else "DAYS"
+        active_str = ", ".join(active_sorted)
+        return f"{count:02d} {label} ({active_str})"
+    
+    # Extract alphabetical word tokens (strips parens, numbers, punctuation)
     raw_tokens = re.findall(r"[A-Za-z]+", s)
     parsed_days = []
     for tok in raw_tokens:
         tok_clean = tok.strip().upper()
-        if tok_clean in ("DAY", "DAYS", "DAYSS", "DAYSSS", "DAILY", "EX", "UPTO", "WEEKLY", "TRAIN"):
+        if tok_clean in ("DAY", "DAYS", "DAYSS", "DAYSSS", "DAILY", "EX", "UPTO", "WEEKLY", "TRAIN", "EXCEPT", "EXC"):
             continue
         if tok_clean in _DAY_ALIASES:
             canonical = _DAY_ALIASES[tok_clean]
@@ -264,9 +300,17 @@ def _format_run_days(days_input: str) -> str:
     if not parsed_days or len(parsed_days) == 7:
         return "(DAILY)"
         
-    sorted_days = sorted(parsed_days, key=lambda d: _DAY_CANONICAL_ORDER.index(d))
-    count_str = f"{len(sorted_days):02d} DAY" if len(sorted_days) == 1 else f"{len(sorted_days):02d} DAYS"
-    return f"{count_str} ({', '.join(sorted_days)})"
+    active_sorted = sorted(parsed_days, key=lambda d: _DAY_CANONICAL_ORDER.index(d))
+    missing_sorted = [d for d in _DAY_CANONICAL_ORDER if d not in active_sorted]
+    count = len(active_sorted)
+    if count == 7 or count == 0:
+        return "(DAILY)"
+    if count in (4, 5, 6):
+        missing_str = ", ".join(missing_sorted)
+        return f"{count:02d} DAYS (Except \u2013 {missing_str})"
+    label = "DAY" if count == 1 else "DAYS"
+    active_str = ", ".join(active_sorted)
+    return f"{count:02d} {label} ({active_str})"
 
 # SECTION 1.5 - OFFLINE MASTER DATASET FAIL-SAFE CACHE (3,596+ TRAINS)
 # ==============================================================================
@@ -800,11 +844,11 @@ def fetch_train_indiarailinfo(train_no: str) -> Optional[dict]:
                 "train_name":    cached["train_name"],
                 "origin_code":   cached["origin_code"] or "SRC",
                 "dest_code":     cached["dest_code"] or "DST",
-                "dep_time":      "---",
-                "arr_time":      "---",
-                "station_codes": [cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"],
-                "coaches":       "20 Coaches",
-                "run_days":      cached["running_days"],
+                "dep_time":      cached.get("dep_time", "---"),
+                "arr_time":      cached.get("arr_time", "---"),
+                "station_codes": cached.get("station_codes") or ([cached["origin_code"], cached["dest_code"]] if cached["origin_code"] and cached["dest_code"] else ["SRC", "DST"]),
+                "coaches":       cached.get("coaches", "20 Coaches"),
+                "run_days":      _format_run_days(cached.get("running_days", "(DAILY)")),
                 "data_source":   "offline_backup",
                 "source_notice": "⚠️ Online data nahi mila (Scraper failed) - Loaded from Offline Master Database Cache"
             }
