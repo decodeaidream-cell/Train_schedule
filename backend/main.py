@@ -193,23 +193,30 @@ print(f"  {C.B_MAGENTA}🎨 Vibrant ANSI Console Output Active{C.RESET}")
 print(f"{C.B_CYAN}{C.BOLD}=" * 65 + f"{C.RESET}\n")
 
 _CLUTTER_PARENS_RE = re.compile(
-
     r"\s*\((?:PT\d*|SF|Mail|Express|Special|UnReserved|Weekly|Bi-Weekly|Tri-Weekly|Daily|AC|TOD|TOD\+WCB|WCB)\)",
-
     re.IGNORECASE
-
 )
 
 def _clean_train_name(name: str) -> str:
-
+    """
+    Cleans and extracts core train name, removing redundant origin prefix:
+    e.g. 'MGR Chennai Central - Mangaluru Central Mail' -> 'Mangaluru Central Mail'
+         'Rani Kamalapati - New Delhi Shatabdi Express' -> 'New Delhi Shatabdi Express'
+         'Tamil Nadu Express' -> 'Tamil Nadu Express'
+    """
     if not name:
-
         return ""
-
     name = _CLUTTER_PARENS_RE.sub("", name)
-
     name = re.sub(r"\s+", " ", name).strip()
-
+    
+    if " - " in name:
+        parts = name.split(" - ")
+        if len(parts) == 2:
+            name = parts[1].strip()
+        elif len(parts) > 2:
+            name = parts[-1].strip()
+            
+    name = re.sub(r"\s+", " ", name).strip()
     return name
 
 # ==============================================================================
